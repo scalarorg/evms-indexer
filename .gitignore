@@ -1,0 +1,14 @@
+# Go workspace file
+go.work
+go.work.sum
+
+# Environment file
+.env
+.env.*
+
+# Build files
+build/
+bin/
+
+# Macos system files
+.DS_Store
