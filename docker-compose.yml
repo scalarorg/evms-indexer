@@ -7,11 +7,11 @@ services:
     hostname: evms-indexer-db
     image: postgres:14.9-alpine3.18
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${INDEXER_POSTGRES_DB:-indexer}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${INDEXER_POSTGRES_DB}
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -34,7 +34,7 @@ services:
       evms-indexer-db:
         condition: service_healthy
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@evms-indexer-db:5432/${POSTGRES_DB_EVMS_INDEXER:-indexer}
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@evms-indexer-db:5432/${POSTGRES_DB_EVMS_INDEXER}
       - CONFIG_PATH=/app/config
     volumes:
       - ./example/config:/app/config
