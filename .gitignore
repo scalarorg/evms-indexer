@@ -12,3 +12,5 @@ bin/
 
 # Macos system files
 .DS_Store
+
+data

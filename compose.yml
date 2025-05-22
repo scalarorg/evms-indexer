@@ -9,14 +9,14 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${INDEXER_POSTGRES_DB}
+      POSTGRES_DB: ${POSTGRES_DB}
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER}" ]
       interval: 10s
       timeout: 5s
       retries: 5
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT}:5432"
     restart: always
     volumes:
       - evms-indexer-db:/var/lib/postgresql/data
@@ -33,9 +33,7 @@ services:
     depends_on:
       evms-indexer-db:
         condition: service_healthy
-    environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@evms-indexer-db:5432/${POSTGRES_DB_EVMS_INDEXER}
-      - CONFIG_PATH=/app/config
+   
     volumes:
       - ./example/config:/app/config
     # command:

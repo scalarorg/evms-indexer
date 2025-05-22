@@ -26,6 +26,8 @@ lint:
 .PHONY: build
 build: go.sum
 		go build -o ./bin/indexer -mod=readonly ./main.go
+dev: build
+	export $$(cat .env) && ./bin/indexer
 
 # Build a release image
 .PHONY: docker-image
@@ -39,4 +41,9 @@ docker-up:
 
 docker-down:
 	docker compose down
+
+compose:
+	docker compose -f dev.compose.yml up -d
+compose-down:
+	docker compose -f dev.compose.yml down --volumes
 

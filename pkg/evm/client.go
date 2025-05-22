@@ -69,6 +69,7 @@ func NewEvmClients(configPath string, dbAdapter *db.DatabaseAdapter) ([]*EvmClie
 			log.Warn().Msgf("Failed to create evm client for %s: %v", evmConfig.GetName(), err)
 			continue
 		}
+		client.TokenAddresses = make(map[string]string)
 		evmClients = append(evmClients, client)
 	}
 
