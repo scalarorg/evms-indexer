@@ -72,7 +72,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/joho/godotenv v1.5.1
 	github.com/rs/zerolog v1.34.0
-	github.com/scalarorg/data-models v0.0.0-20250514071006-34d1681b1af8
+	github.com/scalarorg/data-models v0.0.0-20250523034138-22ffadef11fa
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/pflag v1.0.6 // indirect
 )
