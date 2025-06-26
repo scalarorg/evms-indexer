@@ -112,159 +112,6 @@ func (ei *BtcClient) GetBlockHeader(ctx context.Context, height int64) (*chains.
 	return &blockHeader, nil
 }
 
-// GetBlock retrieves a full block with transactions
-func (ei *BtcClient) GetBlock(ctx context.Context, height int64) (*wire.MsgBlock, error) {
-	result, err := ei.callRPCMethod(ctx, "blockchain.block.get", height)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get block: %w", err)
-	}
-
-	var blockHex string
-	err = json.Unmarshal(result, &blockHex)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal block hex: %w", err)
-	}
-
-	blockBytes, err := hex.DecodeString(blockHex)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode block hex: %w", err)
-	}
-
-	// Parse Bitcoin block
-	var block wire.MsgBlock
-	err = block.Deserialize(bytes.NewReader(blockBytes))
-	if err != nil {
-		return nil, fmt.Errorf("failed to deserialize block: %w", err)
-	}
-
-	return &block, nil
-}
-
-// ParseVaultTransaction parses a transaction to check if it's a VaultTransaction
-func (ei *BtcClient) ParseVaultTransaction(tx *wire.MsgTx, blockHeight int64, blockHash string, txPosition int) (*chains.VaultTransaction, error) {
-	// Check if transaction has at least 2 outputs (OP_RETURN + at least one other output)
-	if len(tx.TxOut) < 2 {
-		return nil, nil // Not a vault transaction
-	}
-
-	// Check if first output is OP_RETURN
-	firstOutput := tx.TxOut[0]
-	if len(firstOutput.PkScript) < 2 || firstOutput.PkScript[0] != 0x6a {
-		return nil, nil // Not a vault transaction
-	}
-
-	// Extract OP_RETURN data
-	opReturnData := firstOutput.PkScript[2:] // Skip OP_RETURN and length byte
-
-	// Check for SCALAR service tag
-	if len(opReturnData) < 6 {
-		return nil, nil
-	}
-
-	// Look for "SCALAR" tag (0x5343414c4152)
-	scalarTag := []byte{0x53, 0x43, 0x41, 0x4c, 0x41, 0x52}
-	if len(opReturnData) < len(scalarTag) {
-		return nil, nil
-	}
-
-	// Find SCALAR tag in the data
-	tagIndex := -1
-	for i := 0; i <= len(opReturnData)-len(scalarTag); i++ {
-		if bytes.Equal(opReturnData[i:i+len(scalarTag)], scalarTag) {
-			tagIndex = i
-			break
-		}
-	}
-
-	if tagIndex == -1 {
-		return nil, nil // Not a SCALAR transaction
-	}
-
-	// Parse the vault transaction data
-	vaultTx, err := ei.parseVaultTransactionData(tx, opReturnData[tagIndex:], blockHeight, blockHash, txPosition)
-	if err != nil {
-		log.Warn().Err(err).Msg("Failed to parse vault transaction data")
-		return nil, err
-	}
-
-	return vaultTx, nil
-}
-
-// parseVaultTransactionData parses the vault transaction data from OP_RETURN
-func (ei *BtcClient) parseVaultTransactionData(tx *wire.MsgTx, data []byte, blockHeight int64, blockHash string, txPosition int) (*chains.VaultTransaction, error) {
-	if len(data) < 6 {
-		return nil, fmt.Errorf("insufficient data for vault transaction")
-	}
-
-	// Skip SCALAR tag (6 bytes)
-	data = data[6:]
-
-	if len(data) < 1 {
-		return nil, fmt.Errorf("missing version byte")
-	}
-
-	version := data[0]
-	data = data[1:]
-
-	// Parse based on version
-	switch version {
-	case 1:
-		return ei.parseVaultTransactionV1(tx, data, blockHeight, blockHash, txPosition)
-	case 2:
-		return ei.parseVaultTransactionV2(tx, data, blockHeight, blockHash, txPosition)
-	case 3:
-		return ei.parseVaultTransactionV3(tx, data, blockHeight, blockHash, txPosition)
-	default:
-		return nil, fmt.Errorf("unsupported vault transaction version: %d", version)
-	}
-}
-
-// parseVaultTransactionV1 parses version 1 vault transaction
-func (ei *BtcClient) parseVaultTransactionV1(tx *wire.MsgTx, data []byte, blockHeight int64, blockHash string, txPosition int) (*chains.VaultTransaction, error) {
-	txid := tx.TxHash().String()
-	rawTx, _ := ei.serializeTx(tx)
-
-	vaultTx := &chains.VaultTransaction{
-		Chain:       ei.config.SourceChain,
-		BlockNumber: uint64(blockHeight),
-		BlockHash:   blockHash,
-		TxHash:      txid,
-		TxPosition:  uint(txPosition),
-		Amount:      0, // TODO: parse from outputs
-		Timestamp:   0, // TODO: set from block header if needed
-		ServiceTag:  "SCALAR",
-		VaultTxType: 1, // Default to staking
-		RawTx:       rawTx,
-	}
-	return vaultTx, nil
-}
-
-// parseVaultTransactionV2 parses version 2 vault transaction
-func (ei *BtcClient) parseVaultTransactionV2(tx *wire.MsgTx, data []byte, blockHeight int64, blockHash string, txPosition int) (*chains.VaultTransaction, error) {
-	// V2 parsing logic - similar to V1 but with additional fields
-	return ei.parseVaultTransactionV1(tx, data, blockHeight, blockHash, txPosition)
-}
-
-// parseVaultTransactionV3 parses version 3 vault transaction
-func (ei *BtcClient) parseVaultTransactionV3(tx *wire.MsgTx, data []byte, blockHeight int64, blockHash string, txPosition int) (*chains.VaultTransaction, error) {
-	txid := tx.TxHash().String()
-	rawTx, _ := ei.serializeTx(tx)
-
-	vaultTx := &chains.VaultTransaction{
-		Chain:       ei.config.SourceChain,
-		BlockNumber: uint64(blockHeight),
-		BlockHash:   blockHash,
-		TxHash:      txid,
-		TxPosition:  uint(txPosition),
-		Amount:      0, // TODO: parse from outputs
-		Timestamp:   0, // TODO: set from block header if needed
-		ServiceTag:  "SCALAR",
-		VaultTxType: 1, // Default to staking
-		RawTx:       rawTx,
-	}
-	return vaultTx, nil
-}
-
 // serializeTx serializes a transaction to hex string
 func (ei *BtcClient) serializeTx(tx *wire.MsgTx) (string, error) {
 	var buf bytes.Buffer
@@ -276,7 +123,7 @@ func (ei *BtcClient) serializeTx(tx *wire.MsgTx) (string, error) {
 }
 
 // IndexBlock indexes a block by height
-func (ei *BtcClient) IndexBlock(ctx context.Context, height int64) error {
+func (ei *BtcClient) IndexBlockHeader(ctx context.Context, height int64) error {
 	// Get block header
 	header, err := ei.GetBlockHeader(ctx, height)
 	if err != nil {
@@ -339,7 +186,7 @@ func (ei *BtcClient) GetLatestHeight(ctx context.Context) (int64, error) {
 }
 
 // Start starts the electrum indexer
-func (ei *BtcClient) Start(ctx context.Context) error {
+func (ei *BtcClient) StartElectrumIndexer(ctx context.Context) error {
 	// Start connection with retry
 	go ei.ConnectWithRetry(ctx)
 
@@ -387,7 +234,7 @@ func (ei *BtcClient) Start(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return
 			}
-			err := ei.IndexBlock(ctx, height)
+			err := ei.IndexBlockHeader(ctx, height)
 			if err != nil {
 				log.Warn().Err(err).Int64("height", height).Msg("Failed to index catch-up block")
 				continue
@@ -398,7 +245,7 @@ func (ei *BtcClient) Start(ctx context.Context) error {
 	}()
 
 	// Live goroutine: poll for new blocks and index as they appear
-	go ei.indexBlocks(ctx)
+	go ei.indexBlockHeaders(ctx)
 
 	// Start reconnection handler
 	go ei.handleReconnection(ctx)
@@ -430,7 +277,7 @@ func (ei *BtcClient) handleReconnection(ctx context.Context) {
 }
 
 // indexBlocks continuously indexes new blocks
-func (ei *BtcClient) indexBlocks(ctx context.Context) {
+func (ei *BtcClient) indexBlockHeaders(ctx context.Context) {
 	ticker := time.NewTicker(10 * time.Second) // Check for new blocks every 10 seconds
 	defer ticker.Stop()
 
@@ -460,7 +307,7 @@ func (ei *BtcClient) indexBlocks(ctx context.Context) {
 
 			// Index new blocks
 			for height := ei.lastHeight + 1; height <= latestHeight; height++ {
-				err := ei.IndexBlock(ctx, height)
+				err := ei.IndexBlockHeader(ctx, height)
 				if err != nil {
 					log.Warn().Err(err).Int64("height", height).Str("host", ei.config.ElectrumHost).Msg("Failed to index block")
 					continue
