@@ -8,8 +8,10 @@
         "startBlock": 8316916,
         "recoverRange": 100000,
         "recoverThread": 2,
+        "enable": true,
         "blockTime": 12000,
-        "finality": 1
+        "finality": 1,
+        "database_url": "postgres://vault_indexer:vault_indexer@vault-indexer-db:5432/vault-indexer-db?sslmode=disable"
     },
     {
         "chainId": 97,
@@ -20,7 +22,9 @@
         "startBlock": 51807731,
         "recoverRange": 1000000,
         "recoverThread": 2,
+        "enable": true,
         "blockTime": 12000,
-        "finality": 1
+        "finality": 1,
+        "database_url": "postgres://vault_indexer:vault_indexer@vault-indexer-db:5432/evm_bnb_db?sslmode=disable"
     }
 ]

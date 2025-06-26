@@ -1,0 +1,22 @@
+[
+    {
+        "btc_host": "localhost",
+        "btc_port": 50001,
+        "btc_user": "scalar",
+        "btc_password": "scalartestnet4",
+        "btc_network": "testnet",
+        "btc_ssl": false,
+        "port": 50001,
+        "database_url": "postgres://vault_indexer:vault_indexer@vault-indexer-db:5432/evm_bnb_db?sslmode=disable",
+        "dial_timeout": "30s",
+        "method_timeout": "60s",
+        "ping_interval": "30s",
+        "max_reconnect_attempts": 120,
+        "reconnect_delay": "5s",
+        "enable": true,
+        "enable_auto_reconnect": true,
+        "batch_size": 1,
+        "confirmations": 1,
+        "source_chain": "bitcoin|4"
+    }
+]

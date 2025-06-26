@@ -23,6 +23,7 @@ import (
 	"github.com/scalarorg/evms-indexer/pkg/db"
 	contracts "github.com/scalarorg/evms-indexer/pkg/evm/contracts/generated"
 	"github.com/scalarorg/evms-indexer/pkg/evm/parser"
+	"gorm.io/gorm"
 )
 
 type EvmClient struct {
@@ -32,6 +33,7 @@ type EvmClient struct {
 	GatewayAddress    common.Address
 	Gateway           *contracts.IScalarGateway
 	dbAdapter         *db.DatabaseAdapter
+	separateDB        *gorm.DB          // Separate database connection for this EVM client
 	TokenAddresses    map[string]string //Map token address by symbol
 	ChnlReceivedBlock chan uint64
 	MissingLogs       MissingLogs
@@ -47,7 +49,7 @@ func NewEvmClients(configPath string, dbAdapter *db.DatabaseAdapter) ([]*EvmClie
 	if configPath == "" {
 		return nil, fmt.Errorf("config path is not set")
 	}
-	evmCfgPath := fmt.Sprintf("%s/evm.json", configPath)
+	evmCfgPath := fmt.Sprintf("%s/evms.json", configPath)
 	configs, err := config.ReadJsonArrayConfig[EvmNetworkConfig](evmCfgPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read electrum configs: %w", err)
@@ -55,6 +57,9 @@ func NewEvmClients(configPath string, dbAdapter *db.DatabaseAdapter) ([]*EvmClie
 
 	evmClients := make([]*EvmClient, 0, len(configs))
 	for _, evmConfig := range configs {
+		if !evmConfig.Enable {
+			continue
+		}
 		//Set default value for block time if is not set
 		if evmConfig.BlockTime == 0 {
 			evmConfig.BlockTime = 12 * time.Second
@@ -96,6 +101,7 @@ func NewEvmClient(configPath string, evmConfig *EvmNetworkConfig, dbAdapter *db.
 		GatewayAddress:    *gatewayAddress,
 		Gateway:           gateway,
 		dbAdapter:         dbAdapter,
+		separateDB:        nil,
 		ChnlReceivedBlock: make(chan uint64),
 		MissingLogs: MissingLogs{
 			chainId: evmConfig.GetId(),
@@ -758,4 +764,24 @@ func (c *EvmClient) fetchBlockHeader(blockNumber uint64) error {
 	}
 	c.ChnlReceivedBlock <- blockNumber
 	return nil
+}
+
+// GetDatabase returns the appropriate database connection
+// If separateDB is set, it returns that, otherwise returns the shared dbAdapter
+func (c *EvmClient) GetDatabase() *gorm.DB {
+	if c.separateDB != nil {
+		return c.separateDB
+	}
+	return c.dbAdapter.PostgresClient
+}
+
+// GetDatabaseAdapter returns the appropriate database adapter
+// If separateDB is set, it returns a new adapter with that connection, otherwise returns the shared dbAdapter
+func (c *EvmClient) GetDatabaseAdapter() *db.DatabaseAdapter {
+	if c.separateDB != nil {
+		return &db.DatabaseAdapter{
+			PostgresClient: c.separateDB,
+		}
+	}
+	return c.dbAdapter
 }

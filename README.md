@@ -1,6 +1,14 @@
 # evms-indexer
 
-Indexer for scalar transactions on evms
+Indexer for scalar transactions on EVMs and Bitcoin (via Electrum)
+
+## Features
+
+- **EVM Indexing**: Indexes events from multiple EVM chains
+- **Electrum Indexing**: Direct Bitcoin block and VaultTransaction indexing via Electrum servers
+- **Database Isolation**: Separate database connections for different components
+- **Real-time Processing**: Processes blocks and events as they arrive
+- **Recovery**: Automatic recovery of missing events and blocks
 
 ## Local Development
 
@@ -52,11 +60,51 @@ The application uses the following environment variables (defined in `.env`):
 
 ### Configuration Files
 
+#### EVM Networks
+
 EVM network configurations are stored in `example/config/evm.json`. Update this file to add or modify EVM networks.
 
-### Database
+#### Electrum Indexer
 
-The application automatically creates the necessary database tables and indexes on startup.
+Electrum indexer configurations are stored in `example/config/electrum-indexer.json`. This configures Bitcoin block indexing via Electrum servers.
+
+#### Separate Database Configuration
+
+For separate database connections, use:
+
+- `example/config/evm-separate-db.json` - EVM chains with individual databases
+- Each component can have its own database connection for isolation
+
+### Database Setup
+
+#### Shared Database (Default)
+
+The application automatically creates the necessary database tables and indexes on startup using a shared database.
+
+#### Separate Databases
+
+For production deployments, you can configure separate databases:
+
+```sql
+-- Electrum database
+CREATE DATABASE electrum_db;
+CREATE USER electrum_user WITH PASSWORD 'electrum_password';
+GRANT ALL PRIVILEGES ON DATABASE electrum_db TO electrum_user;
+
+-- EVM chain databases
+CREATE DATABASE evm_sepolia_db;
+CREATE USER evm_sepolia_user WITH PASSWORD 'evm_sepolia_password';
+GRANT ALL PRIVILEGES ON DATABASE evm_sepolia_db TO evm_sepolia_user;
+```
+
+### Architecture
+
+The indexer consists of multiple components:
+
+1. **EVM Clients**: Index events from EVM chains
+2. **Electrum Indexers**: Index Bitcoin blocks and VaultTransactions
+3. **Database Adapters**: Handle data persistence
+4. **Recovery Systems**: Recover missing events and blocks
 
 ### Stopping the Application
 
@@ -80,3 +128,7 @@ make build
 make docker-image
 make docker-up
 ```
+
+## Documentation
+
+For detailed information about the Electrum Indexer, see [docs/electrum-indexer.md](docs/electrum-indexer.md).
