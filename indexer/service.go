@@ -30,18 +30,23 @@ func NewService(config *config.Config, dbAdapter *db.DatabaseAdapter) (*Service,
 func (s *Service) Start(ctx context.Context) error {
 	// Start EVM clients
 	for _, client := range s.EvmClients {
-		//Process recovered logs in dependent go routine
+		// Process recovered logs in dependent go routine
 		go client.ProcessMissingLogs()
-		go func() {
-			//Todo: Handle the moment when recover just finished and listner has not started yet. It around 1 second
-			err := client.RecoverAllEvents(ctx)
+
+		// Start listening to new events immediately
+		go func(c *evm.EvmClient) {
+			c.Start(ctx)
+		}(client)
+
+		// Recover all events in parallel
+		go func(c *evm.EvmClient) {
+			err := c.RecoverAllEvents(ctx)
 			if err != nil {
-				log.Warn().Err(err).Msgf("[Relayer] [Start] cannot recover events for evm client %s", client.EvmConfig.GetId())
+				log.Warn().Err(err).Msgf("[Indexer] [Start] cannot recover events for evm client %s", c.EvmConfig.GetId())
 			} else {
-				log.Info().Msgf("[Relayer] [Start] recovered missing events for evm client %s", client.EvmConfig.GetId())
-				client.Start(ctx)
+				log.Info().Msgf("[Indexer] [Start] recovered missing events for evm client %s", c.EvmConfig.GetId())
 			}
-		}()
+		}(client)
 	}
 	return nil
 }

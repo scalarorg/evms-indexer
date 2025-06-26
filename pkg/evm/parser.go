@@ -19,7 +19,8 @@ type ValidEvmEvent interface {
 		*contracts.IScalarGatewayRedeemToken |
 		*contracts.IScalarGatewayExecuted |
 		*contracts.IScalarGatewayTokenSent |
-		*contracts.IScalarGatewaySwitchPhase
+		*contracts.IScalarGatewaySwitchPhase |
+		*contracts.IScalarGatewayTokenDeployed
 }
 
 // Todo: Check if this is the correct way to extract the destination chain

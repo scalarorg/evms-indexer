@@ -16,7 +16,8 @@ type ValidEvmEvent interface {
 		*contracts.IScalarGatewayRedeemToken |
 		*contracts.IScalarGatewayExecuted |
 		*contracts.IScalarGatewayTokenSent |
-		*contracts.IScalarGatewaySwitchPhase
+		*contracts.IScalarGatewaySwitchPhase |
+		*contracts.IScalarGatewayTokenDeployed
 }
 
 var (

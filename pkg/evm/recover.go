@@ -77,26 +77,6 @@ func (c *EvmClient) ProcessMissingLogs() {
 	log.Info().Str("Chain", c.EvmConfig.ID).Msg("[EvmClient] [ProcessMissingLogs] finished processing all missing evm events")
 }
 
-// Recover all events after recovering
-func (c *EvmClient) RecoverAllEvents(ctx context.Context) error {
-	currentBlockNumber, err := c.Client.BlockNumber(context.Background())
-	if err != nil {
-		return fmt.Errorf("failed to get current block number: %w", err)
-	}
-	log.Info().Str("Chain", c.EvmConfig.ID).Uint64("Current BlockNumber", currentBlockNumber).
-		Msg("[EvmClient] [RecoverAllEvents] recovering all events")
-
-	//Recover all other events
-	err = c.RecoverEvents(ctx, ALL_EVENTS, currentBlockNumber)
-	if err != nil {
-		c.MissingLogs.SetRecovered(true)
-		return err
-	}
-	log.Info().Str("Chain", c.EvmConfig.ID).Msg("[EvmClient] [RecoverAllEvents] recovered all events set recovered flag to true")
-	c.MissingLogs.SetRecovered(true)
-	return nil
-}
-
 func (c *EvmClient) RecoverEvents(ctx context.Context, eventNames []string, currentBlockNumber uint64) error {
 	if c.dbAdapter == nil {
 		log.Warn().Msgf("[EvmClient] [RecoverEvents] dbAdapter is nil, skip recovering events")
@@ -144,8 +124,16 @@ func (c *EvmClient) RecoverEvents(ctx context.Context, eventNames []string, curr
 	for fromBlock < currentBlockNumber {
 		query.FromBlock = big.NewInt(int64(fromBlock))
 		query.ToBlock = big.NewInt(int64(toBlock))
+		start := time.Now()
 		logs, err := c.Client.FilterLogs(context.Background(), query)
+		elapsed := time.Since(start)
 		if err != nil {
+			log.Error().Err(err).
+				Str("Chain", c.EvmConfig.ID).
+				Uint64("FromBlock", query.FromBlock.Uint64()).
+				Uint64("ToBlock", toBlock).
+				Str("Endpoint", c.EvmConfig.RPCUrl).
+				Msg("[EvmClient] [RecoverEvents] error when getting logs")
 			recoverRangeInt, err := extractRecoverRange(err.Error())
 			if err != nil {
 				log.Error().Err(err).Msgf("[EvmClient] [RecoverEvents] failed to extract recover range from error message: %s", err.Error())
@@ -156,6 +144,13 @@ func (c *EvmClient) RecoverEvents(ctx context.Context, eventNames []string, curr
 				Msgf("[EvmClient] [RecoverEvents] recover range extracted from error message: %d", recoverRangeInt)
 			toBlock = fromBlock + recoverRange - 1
 			continue
+		} else {
+			log.Info().Str("Chain", c.EvmConfig.ID).
+				Uint64("FromBlock", query.FromBlock.Uint64()).
+				Uint64("ToBlock", toBlock).
+				Int("Logs found", len(logs)).
+				Str("Elapsed", elapsed.String()).
+				Msgf("[EvmClient] [RecoverAllRedeemSessions] progress %d/%d", currentBlockNumber-query.FromBlock.Uint64()+1, currentBlockNumber-c.EvmConfig.StartBlock+1)
 		}
 
 		if len(logs) > 0 {
