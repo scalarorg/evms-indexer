@@ -15,7 +15,7 @@ import (
 )
 
 func TestConvertContractCallWithToken2Model(t *testing.T) {
-	sepoliaClient, err := evm.NewEvmClient(globalConfig.ConfigPath, sepoliaConfig, nil)
+	sepoliaClient, err := evm.NewEvmClient(globalConfig.ConfigPath, sepoliaConfig)
 	require.NoError(t, err)
 	gatewayAddress := common.HexToAddress("0x320B307AF11918C752F5ddF415679499BC880F74")
 	scalarGatewayAbi, err := contracts.IScalarGatewayMetaData.GetAbi()

@@ -21,7 +21,6 @@ import (
 	chains "github.com/scalarorg/data-models/chains"
 	"github.com/scalarorg/data-models/scalarnet"
 	"github.com/scalarorg/evms-indexer/config"
-	"github.com/scalarorg/evms-indexer/pkg/db"
 	"github.com/scalarorg/evms-indexer/pkg/evm"
 	contracts "github.com/scalarorg/evms-indexer/pkg/evm/contracts/generated"
 	"github.com/stretchr/testify/require"
@@ -36,8 +35,7 @@ const (
 var (
 	configPath                 = "../../../example/config"
 	globalConfig config.Config = config.Config{
-		ConnnectionString: "postgres://postgres:postgres@localhost:5432/relayer?sslmode=disable",
-		ConfigPath:        configPath,
+		ConfigPath: configPath,
 	}
 	sepoliaEthClient *ethclient.Client
 	bnbEthClient     *ethclient.Client
@@ -83,24 +81,17 @@ func TestMain(m *testing.M) {
 	bnbEthClient, _ = createEVMClient("RPC_BNB")
 
 	log.Info().Msgf("Creating evm client with config: %v", sepoliaConfig)
-	dbAdapter, _ := createDbAdapter()
-	sepoliaClient, err = evm.NewEvmClient(globalConfig.ConfigPath, sepoliaConfig, dbAdapter)
+	sepoliaClient, err = evm.NewEvmClient(globalConfig.ConfigPath, sepoliaConfig)
 	if err != nil {
 		log.Error().Msgf("failed to create evm client: %v", err)
 	}
-	bnbClient, err = evm.NewEvmClient(configPath, bnbConfig, dbAdapter)
+	bnbClient, err = evm.NewEvmClient(configPath, bnbConfig)
 	if err != nil {
 		log.Error().Msgf("failed to create evm client: %v", err)
 	}
 	os.Exit(m.Run())
 }
-func createDbAdapter() (*db.DatabaseAdapter, error) {
-	dbAdapter, err := db.NewDatabaseAdapter(globalConfig.ConnnectionString)
-	if err != nil {
-		log.Error().Msgf("failed to create db adapter: %v", err)
-	}
-	return dbAdapter, nil
-}
+
 func createEVMClient(key string) (*ethclient.Client, error) {
 	rpcEndpoint := os.Getenv(key)
 	rpcSepolia, err := rpc.DialContext(context.Background(), rpcEndpoint)
@@ -111,7 +102,7 @@ func createEVMClient(key string) (*ethclient.Client, error) {
 	return ethclient.NewClient(rpcSepolia), nil
 }
 func TestGetBlockHeader(t *testing.T) {
-	sepoliaClient, err := evm.NewEvmClient(configPath, sepoliaConfig, nil)
+	sepoliaClient, err := evm.NewEvmClient(configPath, sepoliaConfig)
 	if err != nil {
 		log.Error().Msgf("failed to create evm client: %v", err)
 	}
@@ -264,7 +255,7 @@ func TestEvmSubscribe(t *testing.T) {
 	select {}
 }
 func TestRecoverEventTokenSent(t *testing.T) {
-	bnbClient, err := evm.NewEvmClient(configPath, bnbConfig, nil)
+	bnbClient, err := evm.NewEvmClient(configPath, bnbConfig)
 	require.NoError(t, err)
 	//Get current block number
 	blockNumber, err := bnbClient.Client.BlockNumber(context.Background())
@@ -287,7 +278,7 @@ func TestRecoverEventTokenSent(t *testing.T) {
 	fmt.Printf("missingEvents %v\n", missingEvents)
 }
 func TestRecoverEventContractCallWithToken(t *testing.T) {
-	bnbClient, err := evm.NewEvmClient(configPath, bnbConfig, nil)
+	bnbClient, err := evm.NewEvmClient(configPath, bnbConfig)
 	require.NoError(t, err)
 	//Get current block number
 	blockNumber, err := bnbClient.Client.BlockNumber(context.Background())
@@ -333,7 +324,7 @@ func TestRecoverEventContractCallWithToken(t *testing.T) {
 func TestEvmClientWatchTokenSent(t *testing.T) {
 	watchOpts := bind.WatchOpts{Start: &sepoliaConfig.StartBlock, Context: context.Background()}
 	sink := make(chan *contracts.IScalarGatewayTokenSent)
-	bnbClient, err := evm.NewEvmClient(configPath, bnbConfig, nil)
+	bnbClient, err := evm.NewEvmClient(configPath, bnbConfig)
 	if err != nil {
 		log.Error().Msgf("failed to create evm client: %v", err)
 	}
@@ -354,7 +345,7 @@ func TestEvmClientWatchTokenSent(t *testing.T) {
 func TestReconnectWithWatchTokenSent(t *testing.T) {
 	watchOpts := bind.WatchOpts{Start: &sepoliaConfig.StartBlock, Context: context.Background()}
 	sink := make(chan *contracts.IScalarGatewayTokenSent)
-	bnbClient, err := evm.NewEvmClient(configPath, bnbConfig, nil)
+	bnbClient, err := evm.NewEvmClient(configPath, bnbConfig)
 	if err != nil {
 		log.Error().Msgf("failed to create evm client: %v", err)
 	}

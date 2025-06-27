@@ -45,7 +45,7 @@ type EvmClient struct {
 // format: wss:// -> https://
 // Todo: Improve this implementation
 
-func NewEvmClients(configPath string, dbAdapter *db.DatabaseAdapter) ([]*EvmClient, error) {
+func NewEvmClients(configPath string) ([]*EvmClient, error) {
 	if configPath == "" {
 		return nil, fmt.Errorf("config path is not set")
 	}
@@ -69,7 +69,7 @@ func NewEvmClients(configPath string, dbAdapter *db.DatabaseAdapter) ([]*EvmClie
 		if evmConfig.RecoverRange == 0 {
 			evmConfig.RecoverRange = 1000000
 		}
-		client, err := NewEvmClient(configPath, &evmConfig, dbAdapter)
+		client, err := NewEvmClient(configPath, &evmConfig)
 		if err != nil {
 			log.Warn().Msgf("Failed to create evm client for %s: %v", evmConfig.GetName(), err)
 			continue
@@ -81,7 +81,7 @@ func NewEvmClients(configPath string, dbAdapter *db.DatabaseAdapter) ([]*EvmClie
 	return evmClients, nil
 }
 
-func NewEvmClient(configPath string, evmConfig *EvmNetworkConfig, dbAdapter *db.DatabaseAdapter) (*EvmClient, error) {
+func NewEvmClient(configPath string, evmConfig *EvmNetworkConfig) (*EvmClient, error) {
 	// Setup
 	ctx := context.Background()
 	log.Info().Any("evmConfig", evmConfig).Msgf("[EvmClient] [NewEvmClient] connecting to EVM network")
@@ -95,6 +95,16 @@ func NewEvmClient(configPath string, evmConfig *EvmNetworkConfig, dbAdapter *db.
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gateway for network %s: %w", evmConfig.Name, err)
 	}
+
+	// Initialize database adapter
+	var dbAdapter *db.DatabaseAdapter
+	if evmConfig.DatabaseURL != "" {
+		dbAdapter, err = db.NewDatabaseAdapter(evmConfig.DatabaseURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create database adapter for network %s: %w", evmConfig.Name, err)
+		}
+	}
+
 	evmClient := &EvmClient{
 		EvmConfig:         evmConfig,
 		Client:            client,

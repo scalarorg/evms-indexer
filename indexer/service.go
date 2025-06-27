@@ -17,9 +17,9 @@ type Service struct {
 	BtcClients []*btc.BtcClient
 }
 
-func NewService(config *config.Config, dbAdapter *db.DatabaseAdapter) (*Service, error) {
+func NewService(config *config.Config) (*Service, error) {
 	// Initialize EVM clients (with shared database)
-	evmClients, err := evm.NewEvmClients(config.ConfigPath, dbAdapter)
+	evmClients, err := evm.NewEvmClients(config.ConfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create evm clients: %w", err)
 	}
@@ -27,11 +27,10 @@ func NewService(config *config.Config, dbAdapter *db.DatabaseAdapter) (*Service,
 	// Initialize Electrum Indexers
 	btcClients, err := btc.NewBtcClients(config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create electrum indexers: %w", err)
+		return nil, fmt.Errorf("failed to create btc indexers: %w", err)
 	}
 
 	return &Service{
-		dbAdapter:  dbAdapter,
 		EvmClients: evmClients,
 		BtcClients: btcClients,
 	}, nil

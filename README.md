@@ -1,6 +1,6 @@
 # evms-indexer
 
-Indexer for scalar transactions on EVMs and Bitcoin (via Electrum)
+Indexer for scalar transactions on EVMs and Bitcoin
 
 ## Features
 
@@ -64,16 +64,9 @@ The application uses the following environment variables (defined in `.env`):
 
 EVM network configurations are stored in `example/config/evm.json`. Update this file to add or modify EVM networks.
 
-#### Electrum Indexer
+#### Btc Indexer
 
-Electrum indexer configurations are stored in `example/config/electrum-indexer.json`. This configures Bitcoin block indexing via Electrum servers.
-
-#### Separate Database Configuration
-
-For separate database connections, use:
-
-- `example/config/evm-separate-db.json` - EVM chains with individual databases
-- Each component can have its own database connection for isolation
+Btc indexer configurations are stored in `example/config/btcs.json`. This configures Bitcoin block indexing via btc node.
 
 ### Database Setup
 

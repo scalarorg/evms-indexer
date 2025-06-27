@@ -12,8 +12,8 @@ func NewBtcClients(globalConfig *config.Config) ([]*BtcClient, error) {
 		return nil, fmt.Errorf("config path is required")
 	}
 
-	electrumCfgPath := fmt.Sprintf("%s/electrs.json", globalConfig.ConfigPath)
-	configs, err := config.ReadJsonArrayConfig[BtcConfig](electrumCfgPath)
+	btcCfgPath := fmt.Sprintf("%s/btcs.json", globalConfig.ConfigPath)
+	configs, err := config.ReadJsonArrayConfig[BtcConfig](btcCfgPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read electrum indexer configs: %w", err)
 	}

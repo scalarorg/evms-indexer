@@ -9,7 +9,6 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/scalarorg/evms-indexer/config"
 	"github.com/scalarorg/evms-indexer/indexer"
-	"github.com/scalarorg/evms-indexer/pkg/db"
 	"github.com/spf13/cobra"
 )
 
@@ -37,13 +36,8 @@ func run(cmd *cobra.Command, args []string) {
 	if err := config.LoadEnv(environment); err != nil {
 		log.Warn().Msgf("Failed to load config: %v", err)
 	}
-	// Initialize global DatabaseClient
-	dbAdapter, err := db.NewDatabaseAdapter(config.GlobalConfig.ConnnectionString)
-	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to create database adapter")
-	}
 	// Initialize indexer service
-	service, err := indexer.NewService(&config.GlobalConfig, dbAdapter)
+	service, err := indexer.NewService(&config.GlobalConfig)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create evms indexer service")
 	}

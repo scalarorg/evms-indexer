@@ -17,8 +17,8 @@ type IChainConfig interface {
 }
 type ChainFamily map[uint64]IChainConfig
 type Config struct {
-	ConfigPath        string `mapstructure:"CONFIG_PATH"`
-	ConnnectionString string `mapstructure:"DATABASE_URL"` // Postgres db connection string	//ActiveChains      map[string]bool        `mapstructure:"active_chains"` //Store all active chains in the scalar network
+	ConfigPath string `mapstructure:"CONFIG_PATH"`
+	//ActiveChains      map[string]bool        `mapstructure:"active_chains"` //Store all active chains in the scalar network
 }
 
 var GlobalConfig Config
@@ -43,7 +43,6 @@ func LoadEnv(environment string) error {
 	// Tell Viper to read from environment
 	viper.AutomaticEnv()
 	viper.Set("CONFIG_PATH", os.Getenv("CONFIG_PATH"))
-	viper.Set("DATABASE_URL", os.Getenv("DATABASE_URL"))
 	//viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	// Add support for .env files
 	// if environment == "" {

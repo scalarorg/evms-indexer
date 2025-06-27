@@ -328,7 +328,7 @@ func (ei *BtcClient) Stop() {
 	}
 
 	ei.Disconnect()
-	log.Info().Str("host", ei.config.ElectrumHost).Msg("Electrum indexer stopped")
+	log.Info().Str("host", ei.config.ElectrumHost).Msg("BTC indexer stopped")
 }
 
 // GetLatestIndexedHeight returns the latest block height indexed in the database
