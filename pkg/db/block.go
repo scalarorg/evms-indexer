@@ -16,6 +16,9 @@ func (db *DatabaseAdapter) FindBlockHeader(chainId string, blockNumber uint64) (
 func (db *DatabaseAdapter) CreateBlockHeader(blockHeader *chains.BlockHeader) error {
 	return db.PostgresClient.Create(blockHeader).Error
 }
+func (db *DatabaseAdapter) CreateBtcBlockHeader(blockHeader *chains.BtcBlockHeader) error {
+	return db.PostgresClient.Create(blockHeader).Error
+}
 
 func (db *DatabaseAdapter) GetBlockTime(chainId string, blockNumbers []uint64) (map[uint64]uint64, error) {
 	var blockHeaders []*chains.BlockHeader
@@ -30,14 +33,14 @@ func (db *DatabaseAdapter) GetBlockTime(chainId string, blockNumbers []uint64) (
 	return blockTimeMap, nil
 }
 
-// GetLatestBlockNumber returns the latest block number for a given chain
-func (db *DatabaseAdapter) GetLatestBlockNumber(chainId string) (uint64, error) {
-	var blockHeader chains.BlockHeader
-	result := db.PostgresClient.Where("chain = ?", chainId).Order("block_number DESC").First(&blockHeader)
+// GetLatestBtcIndexedHeight returns the latest block height indexed in the database for BTC chains
+func (db *DatabaseAdapter) GetLatestIndexedHeight(chainId string) (int64, error) {
+	var header chains.BtcBlockHeader
+	result := db.PostgresClient.Order("height DESC").First(&header)
 	if result.Error != nil {
 		return 0, result.Error
 	}
-	return blockHeader.BlockNumber, nil
+	return int64(header.Height), nil
 }
 
 // GetLatestBlockFromAllEvents returns the latest block number from all event tables

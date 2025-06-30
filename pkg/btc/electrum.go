@@ -6,93 +6,302 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"time"
 
-	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/rs/zerolog/log"
 	"github.com/scalarorg/data-models/chains"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 )
 
-// NewElectrumIndexer creates a new electrum indexer
-func NewBtcClient(config *BtcConfig) (*BtcClient, error) {
-	// Set default values
-	if config.DialTimeout == 0 {
-		config.DialTimeout = 30 * time.Second
-	}
-	if config.MethodTimeout == 0 {
-		config.MethodTimeout = 60 * time.Second
-	}
-	if config.PingInterval == 0 {
-		config.PingInterval = 30 * time.Second
-	}
-	if config.MaxReconnectAttempts == 0 {
-		config.MaxReconnectAttempts = 120
-	}
-	if config.ReconnectDelay == 0 {
-		config.ReconnectDelay = 5 * time.Second
-	}
-	if config.BatchSize == 0 {
-		config.BatchSize = 1
-	}
-	if config.Confirmations == 0 {
-		config.Confirmations = 1
+// Connect establishes connection to the electrum server
+func (c *BtcClient) Connect() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.isConnected {
+		return nil
 	}
 
-	// Create separate database connection for electrum data
-	dbAdapter, err := gorm.Open(postgres.Open(config.DatabaseURL), &gorm.Config{})
+	endpoint := fmt.Sprintf("%s:%d", c.config.ElectrumHost, c.config.ElectrumPort)
+	conn, err := net.DialTimeout("tcp", endpoint, c.config.DialTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to electrum database: %w", err)
+		return fmt.Errorf("failed to connect to electrum server %s: %w", endpoint, err)
 	}
 
-	// Run migrations for electrum tables
-	err = runElectrumMigrations(dbAdapter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to run electrum migrations: %w", err)
-	}
+	c.conn = conn
+	c.isConnected = true
 
-	// Configure connection
-	connCfg := &rpcclient.ConnConfig{
-		Host:         fmt.Sprintf("%s:%d", config.BtcHost, config.BtcPort),
-		User:         config.BtcUser,
-		Pass:         config.BtcPassword,
-		HTTPPostMode: true,
-		DisableTLS:   config.BtcSSL == nil || !*config.BtcSSL,
-	}
-
-	// Create new client
-	rpcClient, err := rpcclient.New(connCfg, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create BTC client for network %s: %w", config.BtcNetwork, err)
-	}
-
-	indexer := &BtcClient{
-		config:             config,
-		dbAdapter:          dbAdapter,
-		rpcClient:          rpcClient,
-		reconnectChan:      make(chan struct{}, 1),
-		stopChan:           make(chan struct{}),
-		reconnectAttempts:  0,
-		baseReconnectDelay: config.ReconnectDelay,
-		maxReconnectDelay:  2 * time.Minute, // Maximum 2 minutes between reconnection attempts
-	}
-
-	return indexer, nil
+	log.Info().Str("endpoint", endpoint).Msg("Connected to electrum server")
+	return nil
 }
 
-// runElectrumMigrations creates the necessary tables for electrum data
-func runElectrumMigrations(db *gorm.DB) error {
-	return db.AutoMigrate(
-		&chains.BtcBlockHeader{},
-		&chains.VaultTransaction{},
-	)
+// Disconnect closes the connection to the electrum server
+func (c *BtcClient) Disconnect() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if !c.isConnected {
+		return nil
+	}
+
+	if c.conn != nil {
+		err := c.conn.Close()
+		c.conn = nil
+		c.isConnected = false
+		return err
+	}
+
+	return nil
+}
+
+// Reconnect attempts to reconnect to the electrum server with exponential backoff
+func (c *BtcClient) Reconnect() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Close existing connection if any
+	if c.conn != nil {
+		c.conn.Close()
+		c.conn = nil
+		c.isConnected = false
+	}
+
+	// Calculate delay with exponential backoff
+	delay := c.baseReconnectDelay * time.Duration(1<<c.reconnectAttempts)
+	if delay > c.maxReconnectDelay {
+		delay = c.maxReconnectDelay
+	}
+
+	log.Info().
+		Str("host", c.config.ElectrumHost).
+		Int("port", c.config.ElectrumPort).
+		Int("attempt", c.reconnectAttempts+1).
+		Dur("delay", delay).
+		Msg("Attempting to reconnect to electrum server")
+
+	// Wait before attempting reconnection
+	time.Sleep(delay)
+
+	// Attempt to connect
+	endpoint := fmt.Sprintf("%s:%d", c.config.ElectrumHost, c.config.ElectrumPort)
+	conn, err := net.DialTimeout("tcp", endpoint, c.config.DialTimeout)
+	if err != nil {
+		c.reconnectAttempts++
+		return fmt.Errorf("failed to reconnect to electrum server %s: %w", endpoint, err)
+	}
+
+	// Connection successful
+	c.conn = conn
+	c.isConnected = true
+	c.reconnectAttempts = 0 // Reset attempts on successful connection
+
+	log.Info().
+		Str("endpoint", endpoint).
+		Msg("Successfully reconnected to electrum server")
+
+	return nil
+}
+
+// ConnectWithRetry continuously attempts to maintain connection with automatic reconnection
+func (c *BtcClient) ConnectWithRetry(ctx context.Context) {
+	var retryInterval = c.baseReconnectDelay
+	maxRetryInterval := c.maxReconnectDelay
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info().Str("host", c.config.ElectrumHost).Msg("Context cancelled, stopping reconnection")
+			return
+		case <-c.stopChan:
+			log.Info().Str("host", c.config.ElectrumHost).Msg("Stop signal received, stopping reconnection")
+			return
+		default:
+			// Try to connect
+			err := c.Connect()
+			if err != nil {
+				log.Error().Err(err).Str("host", c.config.ElectrumHost).Msg("Failed to connect to electrum server")
+			} else {
+				// Connection successful, start monitoring
+				go c.monitorConnection(ctx)
+				return
+			}
+
+			// If context is cancelled, stop retrying
+			if ctx.Err() != nil {
+				log.Info().Str("host", c.config.ElectrumHost).Msg("Context cancelled, stopping reconnection")
+				return
+			}
+
+			// Wait before retrying
+			log.Info().Str("host", c.config.ElectrumHost).Dur("retryInterval", retryInterval).Msg("Reconnecting...")
+			time.Sleep(retryInterval)
+
+			// Exponential backoff with cap
+			if retryInterval < maxRetryInterval {
+				retryInterval *= 2
+			}
+		}
+	}
+}
+
+// monitorConnection monitors the connection and triggers reconnection if needed
+func (c *BtcClient) monitorConnection(ctx context.Context) {
+	ticker := time.NewTicker(c.config.PingInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-c.stopChan:
+			return
+		case <-ticker.C:
+			// Check if connection is still alive
+			if !c.isConnectionAlive() {
+				log.Warn().Str("host", c.config.ElectrumHost).Msg("Connection lost, attempting reconnection")
+
+				// Trigger reconnection
+				select {
+				case c.reconnectChan <- struct{}{}:
+				default:
+					// Channel is full, skip this reconnection attempt
+				}
+			}
+		}
+	}
+}
+
+// isConnectionAlive checks if the connection is still alive
+func (c *BtcClient) isConnectionAlive() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if !c.isConnected || c.conn == nil {
+		return false
+	}
+
+	// Try to ping the server
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := c.callRPCMethod(ctx, "server.ping")
+	return err == nil
+}
+
+// callRPCMethod makes an RPC call to the electrum server
+func (c *BtcClient) callRPCMethod(ctx context.Context, method string, params ...interface{}) ([]byte, error) {
+	c.mu.RLock()
+	if !c.isConnected {
+		c.mu.RUnlock()
+		return nil, fmt.Errorf("not connected to electrum server")
+	}
+	c.mu.RUnlock()
+
+	// Create JSON-RPC request
+	request := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  method,
+		"params":  params,
+	}
+
+	requestBytes, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	// Send request
+	c.mu.Lock()
+	if c.conn == nil {
+		c.mu.Unlock()
+		// Trigger reconnection
+		select {
+		case c.reconnectChan <- struct{}{}:
+		default:
+		}
+		return nil, fmt.Errorf("connection is nil")
+	}
+
+	// Set write deadline
+	err = c.conn.SetWriteDeadline(time.Now().Add(c.config.MethodTimeout))
+	if err != nil {
+		c.mu.Unlock()
+		// Trigger reconnection
+		select {
+		case c.reconnectChan <- struct{}{}:
+		default:
+		}
+		return nil, fmt.Errorf("failed to set write deadline: %w", err)
+	}
+
+	_, err = c.conn.Write(requestBytes)
+	c.mu.Unlock()
+	if err != nil {
+		// Trigger reconnection
+		select {
+		case c.reconnectChan <- struct{}{}:
+		default:
+		}
+		return nil, fmt.Errorf("failed to write request: %w", err)
+	}
+
+	// Read response
+	c.mu.Lock()
+	err = c.conn.SetReadDeadline(time.Now().Add(c.config.MethodTimeout))
+	if err != nil {
+		c.mu.Unlock()
+		// Trigger reconnection
+		select {
+		case c.reconnectChan <- struct{}{}:
+		default:
+		}
+		return nil, fmt.Errorf("failed to set read deadline: %w", err)
+	}
+
+	buffer := make([]byte, 4096)
+	n, err := c.conn.Read(buffer)
+	c.mu.Unlock()
+	if err != nil {
+		// Trigger reconnection
+		select {
+		case c.reconnectChan <- struct{}{}:
+		default:
+		}
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	response := buffer[:n]
+
+	// Parse JSON-RPC response
+	var jsonResponse map[string]interface{}
+	err = json.Unmarshal(response, &jsonResponse)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	// Check for error
+	if errorObj, exists := jsonResponse["error"]; exists && errorObj != nil {
+		return nil, fmt.Errorf("RPC error: %v", errorObj)
+	}
+
+	// Extract result
+	result, exists := jsonResponse["result"]
+	if !exists {
+		return nil, fmt.Errorf("no result in response")
+	}
+
+	resultBytes, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal result: %w", err)
+	}
+
+	return resultBytes, nil
 }
 
 // GetBlockHeader retrieves block header information
-func (ei *BtcClient) GetBlockHeader(ctx context.Context, height int64) (*chains.BtcBlockHeader, error) {
-	result, err := ei.callRPCMethod(ctx, "blockchain.block.header", height)
+func (c *BtcClient) GetBlockHeader(ctx context.Context, height int64) (*chains.BtcBlockHeader, error) {
+	result, err := c.callRPCMethod(ctx, "blockchain.block.header", height)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get block header: %w", err)
 	}
@@ -112,32 +321,50 @@ func (ei *BtcClient) GetBlockHeader(ctx context.Context, height int64) (*chains.
 	return &blockHeader, nil
 }
 
-// serializeTx serializes a transaction to hex string
-func (ei *BtcClient) serializeTx(tx *wire.MsgTx) (string, error) {
-	var buf bytes.Buffer
-	err := tx.Serialize(&buf)
+// GetBlock retrieves a full block with transactions
+func (c *BtcClient) GetBlockFromElectrum(ctx context.Context, height int64) (*wire.MsgBlock, error) {
+	result, err := c.callRPCMethod(ctx, "blockchain.block.get", height)
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("failed to get block: %w", err)
 	}
-	return hex.EncodeToString(buf.Bytes()), nil
+
+	var blockHex string
+	err = json.Unmarshal(result, &blockHex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal block hex: %w", err)
+	}
+
+	blockBytes, err := hex.DecodeString(blockHex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode block hex: %w", err)
+	}
+
+	// Parse Bitcoin block
+	var block wire.MsgBlock
+	err = block.Deserialize(bytes.NewReader(blockBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to deserialize block: %w", err)
+	}
+
+	return &block, nil
 }
 
 // IndexBlock indexes a block by height
-func (ei *BtcClient) IndexBlockHeader(ctx context.Context, height int64) error {
+func (c *BtcClient) IndexBlockHeader(ctx context.Context, height int64) error {
 	// Get block header
-	header, err := ei.GetBlockHeader(ctx, height)
+	header, err := c.GetBlockHeader(ctx, height)
 	if err != nil {
 		return fmt.Errorf("failed to get block header for height %d: %w", height, err)
 	}
 
 	// Save block header to database
-	err = ei.dbAdapter.Create(header).Error
+	err = c.dbAdapter.CreateBtcBlockHeader(header)
 	if err != nil {
 		return fmt.Errorf("failed to save block header: %w", err)
 	}
 
 	// Get full block
-	block, err := ei.GetBlock(ctx, height)
+	block, err := c.GetBlockFromElectrum(ctx, height)
 	if err != nil {
 		return fmt.Errorf("failed to get block for height %d: %w", height, err)
 	}
@@ -145,7 +372,7 @@ func (ei *BtcClient) IndexBlockHeader(ctx context.Context, height int64) error {
 	// Process transactions
 	vaultTxs := []*chains.VaultTransaction{}
 	for i, tx := range block.Transactions {
-		vaultTx, err := ei.ParseVaultTransaction(tx, height, header.Hash, i)
+		vaultTx, err := c.ParseVaultMsgTx(tx, i, height, header.Hash, int64(header.Time))
 		if err != nil {
 			log.Warn().Err(err).Int("txIndex", i).Msg("Failed to parse transaction")
 			continue
@@ -158,7 +385,7 @@ func (ei *BtcClient) IndexBlockHeader(ctx context.Context, height int64) error {
 			vaultTxs = append(vaultTxs, vaultTx)
 
 			// Save vault transaction to database
-			err = ei.dbAdapter.Create(vaultTx).Error
+			err = c.StoreVaultTransaction(vaultTx)
 			if err != nil {
 				log.Warn().Err(err).Msg("Failed to save vault transaction")
 			}
@@ -169,9 +396,9 @@ func (ei *BtcClient) IndexBlockHeader(ctx context.Context, height int64) error {
 	return nil
 }
 
-// GetLatestHeight gets the latest block height from the electrum server
-func (ei *BtcClient) GetLatestHeight(ctx context.Context) (int64, error) {
-	result, err := ei.callRPCMethod(ctx, "blockchain.numblocks.subscribe")
+// GetLatestHeightFromElectrum gets the latest block height from the electrum server
+func (c *BtcClient) GetLatestHeightFromElectrum(ctx context.Context) (int64, error) {
+	result, err := c.callRPCMethod(ctx, "blockchain.numblocks.subscribe")
 	if err != nil {
 		return 0, fmt.Errorf("failed to get latest height: %w", err)
 	}
@@ -186,9 +413,9 @@ func (ei *BtcClient) GetLatestHeight(ctx context.Context) (int64, error) {
 }
 
 // Start starts the electrum indexer
-func (ei *BtcClient) StartElectrumIndexer(ctx context.Context) error {
+func (c *BtcClient) StartElectrumIndexer(ctx context.Context) error {
 	// Start connection with retry
-	go ei.ConnectWithRetry(ctx)
+	go c.ConnectWithRetry(ctx)
 
 	// Wait for initial connection
 	timeout := time.After(30 * time.Second)
@@ -199,33 +426,33 @@ func (ei *BtcClient) StartElectrumIndexer(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			ei.mu.RLock()
-			connected := ei.isConnected
-			ei.mu.RUnlock()
+			c.mu.RLock()
+			connected := c.isConnected
+			c.mu.RUnlock()
 
 			if connected {
 				break
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
-		if ei.isConnected {
+		if c.isConnected {
 			break
 		}
 	}
 
 	// Get latest indexed height from DB
-	dbLatest, err := ei.GetLatestIndexedHeight(ctx)
+	dbLatest, err := c.GetLatestIndexedHeight(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get latest indexed height from DB: %w", err)
 	}
 
 	// Get latest height from Electrum
-	electrumLatest, err := ei.GetLatestHeight(ctx)
+	electrumLatest, err := c.GetLatestHeightFromElectrum(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get latest height from electrum: %w", err)
 	}
 
-	ei.lastHeight = dbLatest
+	c.lastHeight = dbLatest
 	log.Info().Int64("dbLatest", dbLatest).Int64("electrumLatest", electrumLatest).Msg("Electrum indexer starting catch-up and live listeners")
 
 	// Catch-up goroutine: index all missing blocks from DB up to Electrum tip
@@ -234,50 +461,50 @@ func (ei *BtcClient) StartElectrumIndexer(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return
 			}
-			err := ei.IndexBlockHeader(ctx, height)
+			err := c.IndexBlockHeader(ctx, height)
 			if err != nil {
 				log.Warn().Err(err).Int64("height", height).Msg("Failed to index catch-up block")
 				continue
 			}
-			ei.lastHeight = height
+			c.lastHeight = height
 		}
 		log.Info().Int64("catchup_to", electrumLatest).Msg("Catch-up complete, switching to live indexing")
 	}()
 
 	// Live goroutine: poll for new blocks and index as they appear
-	go ei.indexBlockHeaders(ctx)
+	go c.indexBlockHeaders(ctx)
 
 	// Start reconnection handler
-	go ei.handleReconnection(ctx)
+	go c.handleReconnection(ctx)
 
 	return nil
 }
 
 // handleReconnection handles reconnection events
-func (ei *BtcClient) handleReconnection(ctx context.Context) {
+func (c *BtcClient) handleReconnection(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ei.stopChan:
+		case <-c.stopChan:
 			return
-		case <-ei.reconnectChan:
-			log.Info().Str("host", ei.config.ElectrumHost).Msg("Reconnection triggered")
+		case <-c.reconnectChan:
+			log.Info().Str("host", c.config.ElectrumHost).Msg("Reconnection triggered")
 
 			// Attempt to reconnect
-			err := ei.Reconnect()
+			err := c.Reconnect()
 			if err != nil {
-				log.Error().Err(err).Str("host", ei.config.ElectrumHost).Msg("Failed to reconnect")
+				log.Error().Err(err).Str("host", c.config.ElectrumHost).Msg("Failed to reconnect")
 				// Continue monitoring, will retry on next reconnection event
 			} else {
-				log.Info().Str("host", ei.config.ElectrumHost).Msg("Successfully reconnected")
+				log.Info().Str("host", c.config.ElectrumHost).Msg("Successfully reconnected")
 			}
 		}
 	}
 }
 
 // indexBlocks continuously indexes new blocks
-func (ei *BtcClient) indexBlockHeaders(ctx context.Context) {
+func (c *BtcClient) indexBlockHeaders(ctx context.Context) {
 	ticker := time.NewTicker(10 * time.Second) // Check for new blocks every 10 seconds
 	defer ticker.Stop()
 
@@ -285,61 +512,48 @@ func (ei *BtcClient) indexBlockHeaders(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ei.stopChan:
+		case <-c.stopChan:
 			return
 		case <-ticker.C:
 			// Check if we're connected
-			ei.mu.RLock()
-			connected := ei.isConnected
-			ei.mu.RUnlock()
+			c.mu.RLock()
+			connected := c.isConnected
+			c.mu.RUnlock()
 
 			if !connected {
-				log.Warn().Str("host", ei.config.ElectrumHost).Msg("Not connected, skipping block indexing")
+				log.Warn().Str("host", c.config.ElectrumHost).Msg("Not connected, skipping block indexing")
 				continue
 			}
 
 			// Get latest height
-			latestHeight, err := ei.GetLatestHeight(ctx)
+			latestHeight, err := c.GetLatestHeightFromElectrum(ctx)
 			if err != nil {
-				log.Warn().Err(err).Str("host", ei.config.ElectrumHost).Msg("Failed to get latest height")
+				log.Warn().Err(err).Str("host", c.config.ElectrumHost).Msg("Failed to get latest height")
 				continue
 			}
 
 			// Index new blocks
-			for height := ei.lastHeight + 1; height <= latestHeight; height++ {
-				err := ei.IndexBlockHeader(ctx, height)
+			for height := c.lastHeight + 1; height <= latestHeight; height++ {
+				err := c.IndexBlockHeader(ctx, height)
 				if err != nil {
-					log.Warn().Err(err).Int64("height", height).Str("host", ei.config.ElectrumHost).Msg("Failed to index block")
+					log.Warn().Err(err).Int64("height", height).Str("host", c.config.ElectrumHost).Msg("Failed to index block")
 					continue
 				}
-				ei.lastHeight = height
+				c.lastHeight = height
 			}
 		}
 	}
 }
 
 // Stop stops the electrum indexer
-func (ei *BtcClient) Stop() {
-	close(ei.stopChan)
+func (c *BtcClient) Stop() {
+	close(c.stopChan)
 
 	// Stop reconnection ticker if it exists
-	if ei.reconnectTicker != nil {
-		ei.reconnectTicker.Stop()
+	if c.reconnectTicker != nil {
+		c.reconnectTicker.Stop()
 	}
 
-	ei.Disconnect()
-	log.Info().Str("host", ei.config.ElectrumHost).Msg("BTC indexer stopped")
-}
-
-// GetLatestIndexedHeight returns the latest block height indexed in the database
-func (ei *BtcClient) GetLatestIndexedHeight(ctx context.Context) (int64, error) {
-	var header chains.BtcBlockHeader
-	err := ei.dbAdapter.WithContext(ctx).
-		Order("block_number DESC").
-		Limit(1).
-		Find(&header).Error
-	if err != nil {
-		return 0, err
-	}
-	return int64(header.Height), nil
+	c.Disconnect()
+	log.Info().Str("host", c.config.ElectrumHost).Msg("BTC indexer stopped")
 }

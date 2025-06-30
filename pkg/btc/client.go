@@ -1,23 +1,21 @@
 package btc
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"sync"
 	"time"
 
 	"github.com/btcsuite/btcd/rpcclient"
-	"github.com/rs/zerolog/log"
-	"gorm.io/gorm"
+	"github.com/scalarorg/evms-indexer/config"
+	"github.com/scalarorg/evms-indexer/pkg/db"
 )
 
 // BtcClient represents an electrum indexer that directly connects to electrum servers
 type BtcClient struct {
 	config        *BtcConfig
 	rpcClient     *rpcclient.Client
-	dbAdapter     *gorm.DB // Separate DB connection for electrum data
+	dbAdapter     *db.DatabaseAdapter // Database adapter for electrum data
 	conn          net.Conn
 	mu            sync.RWMutex
 	isConnected   bool
@@ -31,287 +29,89 @@ type BtcClient struct {
 	reconnectTicker    *time.Ticker
 }
 
-// Connect establishes connection to the electrum server
-func (ei *BtcClient) Connect() error {
-	ei.mu.Lock()
-	defer ei.mu.Unlock()
-
-	if ei.isConnected {
-		return nil
+// NewElectrumIndexer creates a new electrum indexer
+func NewBtcClient(config *BtcConfig) (*BtcClient, error) {
+	// Set default values
+	if config.DialTimeout == 0 {
+		config.DialTimeout = 30 * time.Second
+	}
+	if config.MethodTimeout == 0 {
+		config.MethodTimeout = 60 * time.Second
+	}
+	if config.PingInterval == 0 {
+		config.PingInterval = 30 * time.Second
+	}
+	if config.MaxReconnectAttempts == 0 {
+		config.MaxReconnectAttempts = 120
+	}
+	if config.ReconnectDelay == 0 {
+		config.ReconnectDelay = 5 * time.Second
+	}
+	if config.BatchSize == 0 {
+		config.BatchSize = 1
+	}
+	if config.Confirmations == 0 {
+		config.Confirmations = 1
 	}
 
-	endpoint := fmt.Sprintf("%s:%d", ei.config.ElectrumHost, ei.config.ElectrumPort)
-	conn, err := net.DialTimeout("tcp", endpoint, ei.config.DialTimeout)
+	// Create database adapter for electrum data
+	dbAdapter, err := db.NewDatabaseAdapter(config.DatabaseURL)
 	if err != nil {
-		return fmt.Errorf("failed to connect to electrum server %s: %w", endpoint, err)
+		return nil, fmt.Errorf("failed to connect to electrum database: %w", err)
 	}
 
-	ei.conn = conn
-	ei.isConnected = true
+	// Configure connection
+	connCfg := &rpcclient.ConnConfig{
+		Host:         fmt.Sprintf("%s:%d", config.BtcHost, config.BtcPort),
+		User:         config.BtcUser,
+		Pass:         config.BtcPassword,
+		HTTPPostMode: true,
+		DisableTLS:   config.BtcSSL == nil || !*config.BtcSSL,
+	}
 
-	log.Info().Str("endpoint", endpoint).Msg("Connected to electrum server")
-	return nil
+	// Create new client
+	rpcClient, err := rpcclient.New(connCfg, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create BTC client for network %s: %w", config.BtcNetwork, err)
+	}
+
+	indexer := &BtcClient{
+		config:             config,
+		dbAdapter:          dbAdapter,
+		rpcClient:          rpcClient,
+		reconnectChan:      make(chan struct{}, 1),
+		stopChan:           make(chan struct{}),
+		reconnectAttempts:  0,
+		baseReconnectDelay: config.ReconnectDelay,
+		maxReconnectDelay:  2 * time.Minute, // Maximum 2 minutes between reconnection attempts
+	}
+
+	return indexer, nil
 }
 
-// Disconnect closes the connection to the electrum server
-func (ei *BtcClient) Disconnect() error {
-	ei.mu.Lock()
-	defer ei.mu.Unlock()
-
-	if !ei.isConnected {
-		return nil
+// NewElectrumIndexers creates multiple electrum indexers from configuration
+func NewBtcClients(globalConfig *config.Config) ([]*BtcClient, error) {
+	if globalConfig == nil || globalConfig.ConfigPath == "" {
+		return nil, fmt.Errorf("config path is required")
 	}
 
-	if ei.conn != nil {
-		err := ei.conn.Close()
-		ei.conn = nil
-		ei.isConnected = false
-		return err
-	}
-
-	return nil
-}
-
-// Reconnect attempts to reconnect to the electrum server with exponential backoff
-func (ei *BtcClient) Reconnect() error {
-	ei.mu.Lock()
-	defer ei.mu.Unlock()
-
-	// Close existing connection if any
-	if ei.conn != nil {
-		ei.conn.Close()
-		ei.conn = nil
-		ei.isConnected = false
-	}
-
-	// Calculate delay with exponential backoff
-	delay := ei.baseReconnectDelay * time.Duration(1<<ei.reconnectAttempts)
-	if delay > ei.maxReconnectDelay {
-		delay = ei.maxReconnectDelay
-	}
-
-	log.Info().
-		Str("host", ei.config.ElectrumHost).
-		Int("port", ei.config.ElectrumPort).
-		Int("attempt", ei.reconnectAttempts+1).
-		Dur("delay", delay).
-		Msg("Attempting to reconnect to electrum server")
-
-	// Wait before attempting reconnection
-	time.Sleep(delay)
-
-	// Attempt to connect
-	endpoint := fmt.Sprintf("%s:%d", ei.config.ElectrumHost, ei.config.ElectrumPort)
-	conn, err := net.DialTimeout("tcp", endpoint, ei.config.DialTimeout)
+	btcCfgPath := fmt.Sprintf("%s/btcs.json", globalConfig.ConfigPath)
+	configs, err := config.ReadJsonArrayConfig[BtcConfig](btcCfgPath)
 	if err != nil {
-		ei.reconnectAttempts++
-		return fmt.Errorf("failed to reconnect to electrum server %s: %w", endpoint, err)
+		return nil, fmt.Errorf("failed to read electrum indexer configs: %w", err)
 	}
 
-	// Connection successful
-	ei.conn = conn
-	ei.isConnected = true
-	ei.reconnectAttempts = 0 // Reset attempts on successful connection
-
-	log.Info().
-		Str("endpoint", endpoint).
-		Msg("Successfully reconnected to electrum server")
-
-	return nil
-}
-
-// ConnectWithRetry continuously attempts to maintain connection with automatic reconnection
-func (ei *BtcClient) ConnectWithRetry(ctx context.Context) {
-	var retryInterval = ei.baseReconnectDelay
-	maxRetryInterval := ei.maxReconnectDelay
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Info().Str("host", ei.config.ElectrumHost).Msg("Context cancelled, stopping reconnection")
-			return
-		case <-ei.stopChan:
-			log.Info().Str("host", ei.config.ElectrumHost).Msg("Stop signal received, stopping reconnection")
-			return
-		default:
-			// Try to connect
-			err := ei.Connect()
-			if err != nil {
-				log.Error().Err(err).Str("host", ei.config.ElectrumHost).Msg("Failed to connect to electrum server")
-			} else {
-				// Connection successful, start monitoring
-				go ei.monitorConnection(ctx)
-				return
-			}
-
-			// If context is cancelled, stop retrying
-			if ctx.Err() != nil {
-				log.Info().Str("host", ei.config.ElectrumHost).Msg("Context cancelled, stopping reconnection")
-				return
-			}
-
-			// Wait before retrying
-			log.Info().Str("host", ei.config.ElectrumHost).Dur("retryInterval", retryInterval).Msg("Reconnecting...")
-			time.Sleep(retryInterval)
-
-			// Exponential backoff with cap
-			if retryInterval < maxRetryInterval {
-				retryInterval *= 2
-			}
+	indexers := make([]*BtcClient, len(configs))
+	for i, cfg := range configs {
+		if !cfg.Enable {
+			continue
 		}
-	}
-}
-
-// monitorConnection monitors the connection and triggers reconnection if needed
-func (ei *BtcClient) monitorConnection(ctx context.Context) {
-	ticker := time.NewTicker(ei.config.PingInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ei.stopChan:
-			return
-		case <-ticker.C:
-			// Check if connection is still alive
-			if !ei.isConnectionAlive() {
-				log.Warn().Str("host", ei.config.ElectrumHost).Msg("Connection lost, attempting reconnection")
-
-				// Trigger reconnection
-				select {
-				case ei.reconnectChan <- struct{}{}:
-				default:
-					// Channel is full, skip this reconnection attempt
-				}
-			}
+		indexer, err := NewBtcClient(&cfg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create electrum indexer %d: %w", i, err)
 		}
-	}
-}
-
-// isConnectionAlive checks if the connection is still alive
-func (ei *BtcClient) isConnectionAlive() bool {
-	ei.mu.RLock()
-	defer ei.mu.RUnlock()
-
-	if !ei.isConnected || ei.conn == nil {
-		return false
+		indexers[i] = indexer
 	}
 
-	// Try to ping the server
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	_, err := ei.callRPCMethod(ctx, "server.ping")
-	return err == nil
-}
-
-// callRPCMethod makes an RPC call to the electrum server
-func (ei *BtcClient) callRPCMethod(ctx context.Context, method string, params ...interface{}) ([]byte, error) {
-	ei.mu.RLock()
-	if !ei.isConnected {
-		ei.mu.RUnlock()
-		return nil, fmt.Errorf("not connected to electrum server")
-	}
-	ei.mu.RUnlock()
-
-	// Create JSON-RPC request
-	request := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"id":      1,
-		"method":  method,
-		"params":  params,
-	}
-
-	requestBytes, err := json.Marshal(request)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	// Send request
-	ei.mu.Lock()
-	if ei.conn == nil {
-		ei.mu.Unlock()
-		// Trigger reconnection
-		select {
-		case ei.reconnectChan <- struct{}{}:
-		default:
-		}
-		return nil, fmt.Errorf("connection is nil")
-	}
-
-	// Set write deadline
-	err = ei.conn.SetWriteDeadline(time.Now().Add(ei.config.MethodTimeout))
-	if err != nil {
-		ei.mu.Unlock()
-		// Trigger reconnection
-		select {
-		case ei.reconnectChan <- struct{}{}:
-		default:
-		}
-		return nil, fmt.Errorf("failed to set write deadline: %w", err)
-	}
-
-	_, err = ei.conn.Write(requestBytes)
-	ei.mu.Unlock()
-	if err != nil {
-		// Trigger reconnection
-		select {
-		case ei.reconnectChan <- struct{}{}:
-		default:
-		}
-		return nil, fmt.Errorf("failed to write request: %w", err)
-	}
-
-	// Read response
-	ei.mu.Lock()
-	err = ei.conn.SetReadDeadline(time.Now().Add(ei.config.MethodTimeout))
-	if err != nil {
-		ei.mu.Unlock()
-		// Trigger reconnection
-		select {
-		case ei.reconnectChan <- struct{}{}:
-		default:
-		}
-		return nil, fmt.Errorf("failed to set read deadline: %w", err)
-	}
-
-	buffer := make([]byte, 4096)
-	n, err := ei.conn.Read(buffer)
-	ei.mu.Unlock()
-	if err != nil {
-		// Trigger reconnection
-		select {
-		case ei.reconnectChan <- struct{}{}:
-		default:
-		}
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	response := buffer[:n]
-
-	// Parse JSON-RPC response
-	var jsonResponse map[string]interface{}
-	err = json.Unmarshal(response, &jsonResponse)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-	}
-
-	// Check for error
-	if errorObj, exists := jsonResponse["error"]; exists && errorObj != nil {
-		return nil, fmt.Errorf("RPC error: %v", errorObj)
-	}
-
-	// Extract result
-	result, exists := jsonResponse["result"]
-	if !exists {
-		return nil, fmt.Errorf("no result in response")
-	}
-
-	resultBytes, err := json.Marshal(result)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal result: %w", err)
-	}
-
-	return resultBytes, nil
+	return indexers, nil
 }

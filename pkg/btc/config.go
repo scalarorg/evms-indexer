@@ -16,6 +16,8 @@ type BtcConfig struct {
 	BtcNetwork           string        `json:"btc_network"`
 	ElectrumHost         string        `json:"electrum_host"`
 	ElectrumPort         int           `json:"electrum_port"`
+	VaultTag             string        `json:"vault_tag"`
+	VaultVersion         uint8         `json:"vault_version"`
 	DatabaseURL          string        `json:"database_url"` // Separate DB for electrum
 	DialTimeout          time.Duration `json:"dial_timeout"`
 	MethodTimeout        time.Duration `json:"method_timeout"`

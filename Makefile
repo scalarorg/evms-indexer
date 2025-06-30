@@ -54,6 +54,9 @@ local-run:
 .PHONY: local-dev
 local-dev: db-up local-run
 
+.PHONY: local-up
+local-up: local-dev
+
 .PHONY: local-clean
 local-clean: db-down
 	@echo "--> Cleaning up local development environment"
