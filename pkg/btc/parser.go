@@ -18,17 +18,24 @@ import (
 // ============================================================================
 
 // ParseVaultTxRawResult parses a btcjson.TxRawResult transaction
-func (c *BtcClient) ParseVaultTxRawResult(tx *btcjson.TxRawResult, block *btcjson.GetBlockVerboseResult, txPosition int) (*chains.VaultTransaction, error) {
+func (c *BtcClient) ParseVaultTxRawResult(tx *btcjson.TxRawResult, block *btcjson.GetBlockVerboseTxResult, txPosition int) (*chains.VaultTransaction, error) {
 	// Convert btcjson.TxRawResult to wire.MsgTx
-	msgTx, err := c.convertTxRawResultToMsgTx(tx)
+	msgTx, err := convertTxRawResultToMsgTx(tx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert TxRawResult to MsgTx: %w", err)
 	}
-
 	// Use the existing ParseVaultMsgTx logic
 	vaultTx, err := c.ParseVaultMsgTx(msgTx, txPosition, block.Height, block.Hash, block.Time)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse vault transaction: %w", err)
+	}
+	if vaultTx != nil {
+		//Calculate markle proof path
+		merkleProofPath, err := calculateMerkleProofPath(block.Tx, txPosition)
+		if err != nil {
+			return nil, fmt.Errorf("failed to calculate merkle proof path: %w", err)
+		}
+		vaultTx.MerkleProof = merkleProofPath.ConcatProofPath()
 	}
 	return vaultTx, nil
 }
@@ -52,7 +59,7 @@ func (c *BtcClient) ParseVaultMsgTx(tx *wire.MsgTx, txPosition int, blockHeight 
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse vault return transaction output: %w", err)
 	}
-
+	vaultReturnTxOutput.ScriptPubkey = firstOutput.PkScript
 	// Parse the vault transaction data
 	vaultTx, err := c.parseVaultTransactionData(tx, vaultReturnTxOutput, txPosition, blockHeight, blockHash, blockTime)
 	if err != nil {
@@ -72,7 +79,8 @@ func (c *BtcClient) parseVaultTransactionData(tx *wire.MsgTx, vaultReturnTxOutpu
 	txPosition int, blockHeight int64, blockHash string, blockTime int64) (*chains.VaultTransaction, error) {
 	// Parse the vault transaction data using the new parser
 	// Serialize the transaction for RawTx field
-	rawTx, err := c.serializeTx(tx)
+
+	rawTx, err := serializeTx(tx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialize transaction: %w", err)
 	}
@@ -94,9 +102,8 @@ func (c *BtcClient) parseVaultTransactionData(tx *wire.MsgTx, vaultReturnTxOutpu
 		DestinationRecipientAddress: vaultReturnTxOutput.DestinationRecipientAddress.String(),
 		SessionSequence:             vaultReturnTxOutput.SessionSequence,
 		CustodianGroupUID:           hex.EncodeToString(vaultReturnTxOutput.CustodianGroupUID[:]),
-		ScriptPubkey:                hex.EncodeToString(vaultReturnTxOutput.ScriptPubkey),
+		ScriptPubkey:                vaultReturnTxOutput.ScriptPubkey,
 	}
-
 	if vaultReturnTxOutput.TransactionType == VaultReturnTxOutputTypeStaking {
 		if len(tx.TxOut) >= 2 {
 			vaultTx.Amount = uint64(tx.TxOut[1].Value)
@@ -135,9 +142,9 @@ func (c *BtcClient) getPreviousTxout(output *wire.OutPoint) (*wire.TxOut, error)
 
 // ParseVaultReturnTxOutput parses a VaultReturnTxOutput from bytes
 func (c *BtcClient) ParseVaultReturnTxOutput(data []byte) (*VaultReturnTxOutput, error) {
-	// if len(data) < 32+1+1+1+6+1+1+1+8+20+20+1+8+32 {
-	// 	return nil, fmt.Errorf("insufficient data for VaultReturnTxOutput")
-	// }
+	if len(data) < SCALAR_TAG_SIZE+VERSION_SIZE+NETWORK_ID_SIZE+FLAGS_SIZE+SERVICE_TAG_SIZE {
+		return nil, fmt.Errorf("insufficient data for VaultReturnTxOutput")
+	}
 	vaultReturnTxOutput := &VaultReturnTxOutput{}
 	offset := 0
 
@@ -166,15 +173,15 @@ func (c *BtcClient) ParseVaultReturnTxOutput(data []byte) (*VaultReturnTxOutput,
 	//Parse vault output based on flags
 	switch vaultReturnTxOutput.Flags {
 	case 0b01000001:
-		return c.parsePoolRedeemVaultReturnTxOutput(data[offset:], vaultReturnTxOutput)
+		return parsePoolRedeemVaultReturnTxOutput(data[offset:], vaultReturnTxOutput)
 	case 0b10000001:
-		return c.parseUpcRedeemVaultReturnTxOutput(data[offset:], vaultReturnTxOutput)
+		return parseUpcRedeemVaultReturnTxOutput(data[offset:], vaultReturnTxOutput)
 	default:
-		return c.parseStakingVaultReturnTxOuput(data[offset:], vaultReturnTxOutput)
+		return parseStakingVaultReturnTxOuput(data[offset:], vaultReturnTxOutput)
 	}
 }
 
-func (c *BtcClient) parsePoolRedeemVaultReturnTxOutput(data []byte, vaultReturnTxOutput *VaultReturnTxOutput) (*VaultReturnTxOutput, error) {
+func parsePoolRedeemVaultReturnTxOutput(data []byte, vaultReturnTxOutput *VaultReturnTxOutput) (*VaultReturnTxOutput, error) {
 	vaultReturnTxOutput.TransactionType = VaultReturnTxOutputTypeRedeem
 	if len(data) < SERVICE_TAG_SIZE+SESSION_SEQUENCE_SIZE+HASH_SIZE {
 		return nil, fmt.Errorf("insufficient data for pool redeem vault return transaction output")
@@ -196,7 +203,7 @@ func (c *BtcClient) parsePoolRedeemVaultReturnTxOutput(data []byte, vaultReturnT
 	return vaultReturnTxOutput, nil
 }
 
-func (c *BtcClient) parseUpcRedeemVaultReturnTxOutput(data []byte, vaultReturnTxOutput *VaultReturnTxOutput) (*VaultReturnTxOutput, error) {
+func parseUpcRedeemVaultReturnTxOutput(data []byte, vaultReturnTxOutput *VaultReturnTxOutput) (*VaultReturnTxOutput, error) {
 	if len(data) < SERVICE_TAG_SIZE {
 		return nil, fmt.Errorf("insufficient data for upc redeem vault return transaction output")
 	}
@@ -209,7 +216,7 @@ func (c *BtcClient) parseUpcRedeemVaultReturnTxOutput(data []byte, vaultReturnTx
 	return vaultReturnTxOutput, nil
 }
 
-func (c *BtcClient) parseStakingVaultReturnTxOuput(data []byte, vaultReturnTxOutput *VaultReturnTxOutput) (*VaultReturnTxOutput, error) {
+func parseStakingVaultReturnTxOuput(data []byte, vaultReturnTxOutput *VaultReturnTxOutput) (*VaultReturnTxOutput, error) {
 	vaultReturnTxOutput.TransactionType = VaultReturnTxOutputTypeStaking
 	offset := 0
 	if len(data) < SERVICE_TAG_SIZE+CUSTODIAN_QUORUM_SIZE+DEST_CHAIN_SIZE+DEST_TOKEN_ADDR_SIZE+DEST_RECIPIENT_ADDR_SIZE {
@@ -229,7 +236,7 @@ func (c *BtcClient) parseStakingVaultReturnTxOuput(data []byte, vaultReturnTxOut
 	}
 	vaultReturnTxOutput.DestChainType = uint8(chainInfo.ChainType)
 	vaultReturnTxOutput.DestChainID = chainInfo.ChainID
-	offset += 9
+	offset += DEST_CHAIN_SIZE
 
 	// Parse destination_token_address (20 bytes)
 	vaultReturnTxOutput.DestinationTokenAddress = DestinationTokenAddress{}
@@ -249,7 +256,7 @@ func (c *BtcClient) parseStakingVaultReturnTxOuput(data []byte, vaultReturnTxOut
 // ============================================================================
 
 // convertTxRawResultToMsgTx converts btcjson.TxRawResult to wire.MsgTx
-func (c *BtcClient) convertTxRawResultToMsgTx(tx *btcjson.TxRawResult) (*wire.MsgTx, error) {
+func convertTxRawResultToMsgTx(tx *btcjson.TxRawResult) (*wire.MsgTx, error) {
 	// Decode the hex transaction
 	txBytes, err := hex.DecodeString(tx.Hex)
 	if err != nil {
@@ -267,11 +274,11 @@ func (c *BtcClient) convertTxRawResultToMsgTx(tx *btcjson.TxRawResult) (*wire.Ms
 }
 
 // serializeTx serializes a transaction to hex string
-func (c *BtcClient) serializeTx(tx *wire.MsgTx) (string, error) {
+func serializeTx(tx *wire.MsgTx) ([]byte, error) {
 	var buf bytes.Buffer
 	err := tx.Serialize(&buf)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return hex.EncodeToString(buf.Bytes()), nil
+	return buf.Bytes(), nil
 }

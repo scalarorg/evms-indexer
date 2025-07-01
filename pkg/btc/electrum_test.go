@@ -82,8 +82,8 @@ func TestVaultTransactionParsing(t *testing.T) {
 		DestinationRecipientAddress: "0x0987654321098765432109876543210987654321",
 		SessionSequence:             1,
 		CustodianGroupUID:           "test_custodian_group_uid",
-		ScriptPubkey:                "test_script_pubkey",
-		RawTx:                       "test_raw_tx",
+		ScriptPubkey:                []byte("test_script_pubkey"),
+		RawTx:                       []byte("test_raw_tx"),
 	}
 
 	assert.NotNil(t, vaultTx)

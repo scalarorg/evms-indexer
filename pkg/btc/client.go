@@ -108,7 +108,7 @@ func NewBtcClients(globalConfig *config.Config) ([]*BtcClient, error) {
 		}
 		indexer, err := NewBtcClient(&cfg)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create electrum indexer %d: %w", i, err)
+			return nil, fmt.Errorf("failed to create btc client %d: %w", i, err)
 		}
 		indexers[i] = indexer
 	}

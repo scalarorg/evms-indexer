@@ -58,7 +58,7 @@ func (s *Service) Start(ctx context.Context) error {
 		}(client)
 	}
 
-	// Start Electrum Clients
+	// Start Btc Clients
 	for _, client := range s.BtcClients {
 		go func(idx *btc.BtcClient) {
 			err := idx.StartBtcIndexer(ctx)

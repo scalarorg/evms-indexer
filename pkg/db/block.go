@@ -2,6 +2,7 @@ package db
 
 import (
 	"github.com/scalarorg/data-models/chains"
+	"gorm.io/gorm/clause"
 )
 
 func (db *DatabaseAdapter) FindBlockHeader(chainId string, blockNumber uint64) (*chains.BlockHeader, error) {
@@ -14,10 +15,17 @@ func (db *DatabaseAdapter) FindBlockHeader(chainId string, blockNumber uint64) (
 }
 
 func (db *DatabaseAdapter) CreateBlockHeader(blockHeader *chains.BlockHeader) error {
-	return db.PostgresClient.Create(blockHeader).Error
+	return db.PostgresClient.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "chain"}, {Name: "block_number"}},
+		DoNothing: true,
+	}).Create(blockHeader).Error
 }
+
 func (db *DatabaseAdapter) CreateBtcBlockHeader(blockHeader *chains.BtcBlockHeader) error {
-	return db.PostgresClient.Create(blockHeader).Error
+	return db.PostgresClient.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "hash"}, {Name: "height"}},
+		UpdateAll: true,
+	}).Create(blockHeader).Error
 }
 
 func (db *DatabaseAdapter) GetBlockTime(chainId string, blockNumbers []uint64) (map[uint64]uint64, error) {

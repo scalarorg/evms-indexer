@@ -769,7 +769,7 @@ func (c *EvmClient) startFetchBlock() {
 func (c *EvmClient) fetchBlockHeader(blockNumber uint64) error {
 	blockHeader, err := c.dbAdapter.FindBlockHeader(c.EvmConfig.GetId(), blockNumber)
 	if err == nil && blockHeader != nil {
-		log.Info().Any("blockHeader", blockHeader).Msgf("[EvmClient] [startFetchBlock] block header already exists")
+		//log.Info().Any("blockHeader", blockHeader).Msgf("[EvmClient] [startFetchBlock] block header already exists")
 		return nil
 	}
 	c.ChnlReceivedBlock <- blockNumber

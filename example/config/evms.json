@@ -1,6 +1,6 @@
 [
     {
-        "enable": false,
+        "enable": true,
         "chainId": 11155111,
         "id": "evm|11155111",
         "name": "ethereum-sepolia",

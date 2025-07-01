@@ -25,6 +25,8 @@ type BtcConfig struct {
 	MaxReconnectAttempts int           `json:"max_reconnect_attempts"`
 	ReconnectDelay       time.Duration `json:"reconnect_delay"`
 	EnableAutoReconnect  bool          `json:"enable_auto_reconnect"`
+	StartHeight          int64         `json:"start_height"`
+	EndHeight            int64         `json:"end_height"`
 	BatchSize            int           `json:"batch_size"`
 	Confirmations        int           `json:"confirmations"`
 	SourceChain          string        `json:"source_chain"`

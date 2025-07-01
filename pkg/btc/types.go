@@ -14,7 +14,7 @@ const (
 	SESSION_SEQUENCE_SIZE    = 8
 	CUSTODIAN_QUORUM_SIZE    = 1
 	HASH_SIZE                = 32
-	DEST_CHAIN_SIZE          = 1
+	DEST_CHAIN_SIZE          = 8
 	DEST_TOKEN_ADDR_SIZE     = 20
 	DEST_RECIPIENT_ADDR_SIZE = 20
 	CUSTODIAN_GROUP_UID_SIZE = 32
@@ -79,13 +79,6 @@ func (d DestinationRecipientAddress) String() string {
 	return fmt.Sprintf("0x%x", d[:])
 }
 
-// ScriptBuf represents a script buffer
-type ScriptBuf []byte
-
-func (s ScriptBuf) String() string {
-	return fmt.Sprintf("%x", s)
-}
-
 // VaultReturnTxOutput represents a return transaction output matching the Rust struct
 type VaultReturnTxOutput struct {
 	Tag                         [SCALAR_TAG_SIZE]byte
@@ -99,7 +92,7 @@ type VaultReturnTxOutput struct {
 	DestChainID                 uint64
 	DestinationTokenAddress     DestinationTokenAddress
 	DestinationRecipientAddress DestinationRecipientAddress
-	ScriptPubkey                ScriptBuf
+	ScriptPubkey                []byte
 	SessionSequence             uint64
 	CustodianGroupUID           [HASH_SIZE]byte
 }

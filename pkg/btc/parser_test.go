@@ -1,12 +1,40 @@
 package btc
 
 import (
+	"bytes"
+	"encoding/hex"
 	"testing"
 
+	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	VaultTag     = "SCALAR"
+	VaultVersion = 3
+)
+
+func TestParseVaultTxRawResult(t *testing.T) {
+	tx82333_130 := "020000000001017d04a83a4e99ea570abbd8ef67c7f7ebcdd298cd87a5f2cea19cec952d6b69f00200000000ffffffff030000000000000000416a3f5343414c4152030140706f6f6c73030100000000aa36a7f6a8e8aa27d96b2cbfbeb35d590a5ae18c1f43e257506f4d92e6b090350bbac30f469baaa0b34b3fcd06000000000000225120a8fc50d87f16d892b4d4d087d259c0ab417e106b044b291a7728d2ae1343de7f4e7e01000000000016001452fd3761b4a9ecee606e512969721e068cd707550246304302200ac43244a5f6fa7f2a565b201df8ee2135c388828e5278faa86a1ee07ef657ce021f7d534487d935107dbe4e9e57c8fe0d0c67089e9b59bda4e560ffd5ae9396cb012102a43bd8629d9ed559b3787a6a375a1bdb1f10276c428ed151d90a619cf8b8478600000000"
+	txBytes, err := hex.DecodeString(tx82333_130)
+	require.NoError(t, err)
+	// Deserialize into wire.MsgTx
+	var msgTx wire.MsgTx
+	err = msgTx.Deserialize(bytes.NewReader(txBytes))
+	require.NoError(t, err)
+	client := &BtcClient{
+		config: &BtcConfig{
+			VaultTag:     VaultTag,
+			VaultVersion: VaultVersion,
+		},
+	}
+	vaultReturnTxOutput, err := client.ParseVaultReturnTxOutput(msgTx.TxOut[0].PkScript[2:])
+	require.NoError(t, err)
+	require.NotNil(t, vaultReturnTxOutput)
+	t.Logf("vaultReturnTxOutput: %+v", vaultReturnTxOutput)
+
+}
 func TestParseVaultReturnTxOutput_Staking(t *testing.T) {
 	// Test data for staking transaction
 	// SCALAR tag (6 bytes) + version (1) + network_id (1) + flags (1) + service_tag (5) + custodian_quorum (1) + dest_chain (9) + dest_token_addr (20) + dest_recipient_addr (20)
@@ -35,8 +63,8 @@ func TestParseVaultReturnTxOutput_Staking(t *testing.T) {
 
 	client := &BtcClient{
 		config: &BtcConfig{
-			VaultTag:     "SCALAR",
-			VaultVersion: 1,
+			VaultTag:     VaultTag,
+			VaultVersion: VaultVersion,
 		},
 	}
 
@@ -243,12 +271,6 @@ func TestDestinationRecipientAddress_String(t *testing.T) {
 
 	expected := "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
 	assert.Equal(t, expected, addr.String())
-}
-
-func TestScriptBuf_String(t *testing.T) {
-	script := ScriptBuf{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0}
-	expected := "123456789abcdef0"
-	assert.Equal(t, expected, script.String())
 }
 
 func TestVaultTransactionType_String(t *testing.T) {

@@ -253,7 +253,7 @@ func (ec *EvmClient) preprocessContractCallApproved(event *contracts.IScalarGate
 
 func (ec *EvmClient) HandleCommandExecuted(event *contracts.IScalarGatewayExecuted) error {
 	//0. Preprocess the event
-	ec.preprocessCommandExecuted(event)
+	//ec.preprocessCommandExecuted(event)
 	err := ec.fetchBlockHeader(event.Raw.BlockNumber)
 	if err != nil {
 		log.Error().Err(err).Msgf("[EvmClient] [HandleCommandExecuted] failed to fetch block header %d", event.Raw.BlockNumber)

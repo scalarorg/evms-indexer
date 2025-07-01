@@ -1,6 +1,6 @@
 [
     {
-        "enable": true,
+        "enable": false,
         "btc_host": "localhost",
         "btc_port": 48332,
         "btc_user": "scalar",
@@ -17,6 +17,8 @@
         "max_reconnect_attempts": 120,
         "reconnect_delay": "5s",
         "enable_auto_reconnect": true,
+        "start_height": 82333,
+        "end_height": 83333,
         "batch_size": 64,
         "confirmations": 1,
         "source_chain": "bitcoin|4"
