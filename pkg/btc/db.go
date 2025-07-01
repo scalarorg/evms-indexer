@@ -2,12 +2,16 @@ package btc
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/scalarorg/data-models/chains"
 )
 
 func (c *BtcClient) GetLatestIndexedHeight(ctx context.Context) (int64, error) {
+	if c.dbAdapter == nil {
+		return 0, fmt.Errorf("db adapter is nil")
+	}
 	return c.dbAdapter.GetLatestIndexedHeight(c.config.SourceChain)
 }
 

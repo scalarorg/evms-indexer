@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/rs/zerolog/log"
 	"github.com/scalarorg/data-models/chains"
+	"github.com/scalarorg/evms-indexer/pkg/db"
 )
 
 type BlockWithHeight struct {
@@ -25,18 +26,10 @@ type BlockHeaderWithHeight struct {
 
 // TODO: handle reorg
 func (c *BtcClient) StartBtcIndexer(ctx context.Context) error {
-
 	blockChan := make(chan *btcjson.GetBlockVerboseTxResult, 1024)
 	blockHashesChan := make(chan map[int64]*chainhash.Hash, 1024)
 	log.Info().Msg("Starting BTC indexer")
 	// Goroutine 1: Periodically fetch new BTC blocks and send to channel
-	go func() {
-		defer close(blockHashesChan)
-		err := c.orchestrateFetching(ctx, blockHashesChan)
-		if err != nil {
-			log.Warn().Err(err).Msg("Failed to fetch data")
-		}
-	}()
 	go func() {
 		defer close(blockChan)
 		err := c.fetchBlockData(ctx, blockHashesChan, blockChan)
@@ -51,15 +44,17 @@ func (c *BtcClient) StartBtcIndexer(ctx context.Context) error {
 			log.Warn().Err(err).Msg("Failed to index blocks")
 		}
 	}()
-
-	return nil
+	err := c.orchestrateFetching(ctx, blockHashesChan)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to fetch data")
+	}
+	return err
 }
 
 func (c *BtcClient) orchestrateFetching(ctx context.Context,
 	blockHashesChan chan<- map[int64]*chainhash.Hash) error {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
-
 	lastHeight, err := c.GetLatestIndexedHeight(ctx)
 	if err != nil {
 		log.Warn().Err(err).Msg("Failed to get latest indexed height, starting from 0")
@@ -222,12 +217,32 @@ func (c *BtcClient) indexBlock(ctx context.Context, blockChan <-chan *btcjson.Ge
 			if !ok {
 				return ctx.Err()
 			}
+
+			// Check for reorg before processing the block
 			blockHeader, err := extractBlockHeader(block)
 			if err != nil {
 				log.Warn().Err(err).Msg("Failed to extract block header")
 				continue
 			}
+
+			// Create BlockHeaderLite for reorg detection
+			blockHash := blockHeader.BlockHash()
+			newBlockHeader := &db.BlockHeaderLite{
+				Height:   block.Height,
+				Hash:     &blockHash,
+				PrevHash: &blockHeader.PrevBlock,
+			}
+
+			// Check for reorg and handle if necessary
+			if err := c.reorgHandler.DetectAndHandleReorg(ctx, newBlockHeader); err != nil {
+				log.Warn().Err(err).Int64("height", block.Height).Msg("Failed to handle reorg")
+				continue
+			}
+
+			// Store block header
 			c.StoreBlockHeader(ctx, blockHeader, block.Height)
+
+			// Process transactions
 			vaultTxs := []*chains.VaultTransaction{}
 			for i, tx := range block.Tx {
 				vaultTx, err := c.ParseVaultTxRawResult(&tx, block, i)
@@ -236,7 +251,6 @@ func (c *BtcClient) indexBlock(ctx context.Context, blockChan <-chan *btcjson.Ge
 				}
 				if vaultTx != nil {
 					vaultTxs = append(vaultTxs, vaultTx)
-
 				}
 			}
 			if len(vaultTxs) > 0 {

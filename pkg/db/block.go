@@ -1,9 +1,20 @@
 package db
 
 import (
+	"context"
+	"encoding/hex"
+
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/scalarorg/data-models/chains"
 	"gorm.io/gorm/clause"
 )
+
+// BlockHeaderLite is a minimal block header for reorg checks
+type BlockHeaderLite struct {
+	Height   int64
+	Hash     *chainhash.Hash
+	PrevHash *chainhash.Hash
+}
 
 func (db *DatabaseAdapter) FindBlockHeader(chainId string, blockNumber uint64) (*chains.BlockHeader, error) {
 	var blockHeader chains.BlockHeader
@@ -85,7 +96,7 @@ func (db *DatabaseAdapter) GetLatestBlockFromAllEvents(chainId string) (uint64, 
 
 	// Check token_deployed table
 	var tokenDeployed chains.TokenDeployed
-	result = db.PostgresClient.Where("source_chain = ?", chainId).Order("block_number DESC").First(&tokenDeployed)
+	result = db.PostgresClient.Where("chain = ?", chainId).Order("block_number DESC").First(&tokenDeployed)
 	if result.Error == nil && tokenDeployed.BlockNumber > maxBlock {
 		maxBlock = tokenDeployed.BlockNumber
 	}
@@ -105,4 +116,61 @@ func (db *DatabaseAdapter) GetLatestBlockFromAllEvents(chainId string) (uint64, 
 	}
 
 	return maxBlock, nil
+}
+
+// GetBlockHashByHeight returns the block hash for a given height
+func (db *DatabaseAdapter) GetBlockHashByHeight(ctx context.Context, height int64) (*chainhash.Hash, error) {
+	var header chains.BtcBlockHeader
+	result := db.PostgresClient.Where("height = ?", height).First(&header)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	hash, err := chainhash.NewHashFromStr(header.Hash)
+	if err != nil {
+		return nil, err
+	}
+	return hash, nil
+}
+
+// GetBlockHeaderByHeight returns a minimal block header for reorg checks
+func (db *DatabaseAdapter) GetBlockHeaderByHeight(ctx context.Context, height int64) (*BlockHeaderLite, error) {
+	var header chains.BtcBlockHeader
+	result := db.PostgresClient.Where("height = ?", height).First(&header)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	hash, err := chainhash.NewHashFromStr(header.Hash)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert byte slice to hex string for chainhash.NewHashFromStr
+	prevHashHex := hex.EncodeToString(header.PrevBlockhash)
+	prevHash, err := chainhash.NewHashFromStr(prevHashHex)
+	if err != nil {
+		return nil, err
+	}
+
+	return &BlockHeaderLite{
+		Height:   int64(header.Height),
+		Hash:     hash,
+		PrevHash: prevHash,
+	}, nil
+}
+
+// DeleteBlockAndTxsFromHeight deletes blocks and their transactions from the given height onwards
+func (db *DatabaseAdapter) DeleteBlockAndTxsFromHeight(ctx context.Context, height int64) error {
+	// Delete vault transactions from the given height onwards
+	if err := db.PostgresClient.Where("block_number >= ?", uint64(height)).Delete(&chains.VaultTransaction{}).Error; err != nil {
+		return err
+	}
+
+	// Delete block headers from the given height onwards
+	if err := db.PostgresClient.Where("height >= ?", height).Delete(&chains.BtcBlockHeader{}).Error; err != nil {
+		return err
+	}
+
+	return nil
 }

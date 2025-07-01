@@ -11,6 +11,7 @@ import (
 
 var dbAdapter *DatabaseAdapter
 
+// DatabaseAdapter implements btc.DBAdapter interface for reorg handling
 type DatabaseAdapter struct {
 	PostgresClient *gorm.DB
 }

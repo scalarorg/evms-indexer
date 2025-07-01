@@ -16,6 +16,7 @@ type BtcClient struct {
 	config        *BtcConfig
 	rpcClient     *rpcclient.Client
 	dbAdapter     *db.DatabaseAdapter // Database adapter for electrum data
+	reorgHandler  *ReorgHandler       // Handler for reorg detection and rollback
 	conn          net.Conn
 	mu            sync.RWMutex
 	isConnected   bool
@@ -79,6 +80,7 @@ func NewBtcClient(config *BtcConfig) (*BtcClient, error) {
 		config:             config,
 		dbAdapter:          dbAdapter,
 		rpcClient:          rpcClient,
+		reorgHandler:       &ReorgHandler{DB: dbAdapter},
 		reconnectChan:      make(chan struct{}, 1),
 		stopChan:           make(chan struct{}),
 		reconnectAttempts:  0,
@@ -101,7 +103,7 @@ func NewBtcClients(globalConfig *config.Config) ([]*BtcClient, error) {
 		return nil, fmt.Errorf("failed to read electrum indexer configs: %w", err)
 	}
 
-	indexers := make([]*BtcClient, len(configs))
+	indexers := []*BtcClient{}
 	for i, cfg := range configs {
 		if !cfg.Enable {
 			continue
@@ -110,7 +112,7 @@ func NewBtcClients(globalConfig *config.Config) ([]*BtcClient, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to create btc client %d: %w", i, err)
 		}
-		indexers[i] = indexer
+		indexers = append(indexers, indexer)
 	}
 
 	return indexers, nil
