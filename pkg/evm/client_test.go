@@ -45,26 +45,27 @@ var (
 		ChainID: 11155111,
 		ID:      CHAIN_ID_SEPOLIA,
 		Name:    "Ethereum sepolia",
-		RPCUrl:  "https://eth-sepolia.g.alchemy.com/v2/nNbspp-yjKP9GtAcdKi8xcLnBTptR2Zx",
+		RPCUrl:  "https://eth-sepolia.g.alchemy.com/v2/xxxxx-xxxxx-xxxxx",
 		//Gateway:    "0x842C080EE1399addb76830CFe21D41e47aaaf57e",
 		//Gateway:    "0x78eE3111ab44078FB32D7E7A7bCf99cf3664415B", //Version Mar 27, 2025
 		//Gateway:      "0xD2B76Ce7Bf49c8C0965e25B9d76c9cb0c550D7a7", //Version Mar 31, 2025
-		Gateway:      "0xCd60852A48fc101304C603A9b1Bbd1E40d35E8c8", //Version Apr 15, 2025
+		//Gateway:      "0xCd60852A48fc101304C603A9b1Bbd1E40d35E8c8", //Version Apr 15, 2025
+		Gateway:      "0x6f91bbb2e3b61B466Ba9f3426DcCAcd20e212f40", //Version Apr 15, 2025
 		Finality:     1,
 		BlockTime:    time.Second * 12,
-		StartBlock:   8095740,
-		RecoverRange: 500,
+		StartBlock:   8316916,
+		RecoverRange: 100000,
 	}
 	bnbConfig *evm.EvmNetworkConfig = &evm.EvmNetworkConfig{
 		ChainID: 97,
 		ID:      CHAIN_ID_BNB,
 		Name:    "Ethereum bnb",
-		RPCUrl:  "https://bnb-testnet.g.alchemy.com/v2/DpCscOiv_evEPscGYARI3cOVeJ59CRo8",
+		RPCUrl:  "https://bnb-testnet.g.alchemy.com/v2/xxxxx-xxxxx-xxxxx",
 		//RPCUrl:       "https://data-seed-prebsc-2-s1.binance.org:8545/",
-		Gateway:      "0x930C3c4f7d26f18830318115DaD97E0179DA55f0",
+		Gateway:      "0x6f91bbb2e3b61B466Ba9f3426DcCAcd20e212f40",
 		Finality:     1,
 		BlockTime:    time.Second * 12,
-		StartBlock:   50180903,
+		StartBlock:   51807731,
 		RecoverRange: 1000000,
 	}
 	bnbClient     *evm.EvmClient
@@ -73,14 +74,14 @@ var (
 
 func TestMain(m *testing.M) {
 	// Load .env file
-	err := godotenv.Load("../../../.env.test")
+	err := godotenv.Load("../../.env.test")
 	if err != nil {
 		log.Error().Err(err).Msg("Error loading .env.test file: %v")
 	}
 	evmUserAddress = os.Getenv("EVM_USER_ADDRESS")
 	sepoliaEthClient, _ = createEVMClient("RPC_SEPOLIA")
 	bnbEthClient, _ = createEVMClient("RPC_BNB")
-
+	sepoliaConfig.RPCUrl = os.Getenv("RPC_SEPOLIA")
 	log.Info().Msgf("Creating evm client with config: %v", sepoliaConfig)
 	sepoliaClient, err = evm.NewEvmClient(globalConfig.ConfigPath, sepoliaConfig)
 	if err != nil {
@@ -95,6 +96,9 @@ func TestMain(m *testing.M) {
 
 func createEVMClient(key string) (*ethclient.Client, error) {
 	rpcEndpoint := os.Getenv(key)
+	if rpcEndpoint == "" {
+		return nil, fmt.Errorf("rpc endpoint is empty")
+	}
 	rpcSepolia, err := rpc.DialContext(context.Background(), rpcEndpoint)
 	if err != nil {
 		fmt.Printf("failed to connect to sepolia with rpc %s: %v", rpcEndpoint, err)
@@ -217,13 +221,20 @@ func TestRecoverEvent(t *testing.T) {
 		}
 		topics = append(topics, event.ID)
 	}
-	err = sepoliaClient.RecoverAllEvents(context.Background(), topics, logsChan)
-	require.NoError(t, err)
-	select {
-	case logs := <-logsChan:
-		fmt.Printf("logs %v\n", logs)
-	case <-time.After(10 * time.Second):
-		fmt.Println("Timeout waiting for logs")
+	go func() {
+		err = sepoliaClient.RecoverAllEvents(context.Background(), topics, logsChan)
+		require.NoError(t, err)
+	}()
+	for {
+		t.Logf("Waiting for logs")
+		select {
+		case logs := <-logsChan:
+			for _, log := range logs {
+				t.Logf("log %v\n", log)
+			}
+		case <-time.After(10 * time.Second):
+			t.Logf("Timeout waiting for logs")
+		}
 	}
 }
 func TestEvmSubscribe(t *testing.T) {

@@ -98,6 +98,19 @@ import (
 // 	return nil
 // }
 
+func (db *DatabaseAdapter) SaveCommandExecuteds(values []*chains.CommandExecuted) error {
+	err := db.PostgresClient.Clauses(
+		clause.OnConflict{
+			Columns:   []clause.Column{{Name: "command_id"}},
+			DoNothing: true,
+		},
+	).Create(values).Error
+	if err != nil {
+		return fmt.Errorf("failed to save command executed: %w", err)
+	}
+	return nil
+}
+
 func (db *DatabaseAdapter) SaveCommandExecuted(cmdExecuted *chains.CommandExecuted) error {
 	err := db.PostgresClient.Clauses(
 		clause.OnConflict{

@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/scalarorg/data-models/chains"
@@ -65,7 +66,9 @@ func (db *DatabaseAdapter) GetLatestIndexedHeight(chainId string) (int64, error)
 // GetLatestBlockFromAllEvents returns the latest block number from all event tables
 func (db *DatabaseAdapter) GetLatestBlockFromAllEvents(chainId string) (uint64, error) {
 	var maxBlock uint64 = 0
-
+	if db.PostgresClient == nil {
+		return 0, fmt.Errorf("database client is nil")
+	}
 	// Check token_sents table
 	var tokenSent chains.TokenSent
 	result := db.PostgresClient.Where("source_chain = ?", chainId).Order("block_number DESC").First(&tokenSent)

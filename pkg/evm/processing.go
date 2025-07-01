@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
+
+	"github.com/rs/zerolog/log"
 )
 
 // Go routine for process missing logs
@@ -60,10 +63,11 @@ func (c *EvmClient) RecoverEvents(ctx context.Context, eventNames []string, curr
 }
 
 func extractRecoverRange(errMsg string) (uint64, error) {
-	re := regexp.MustCompile(`You can make eth_getLogs requests with up to a (\d+) block range`)
+	re := regexp.MustCompile(`You can make eth_getLogs requests with up to a ([\d,","]+) block range`)
 	match := re.FindStringSubmatch(errMsg)
-
+	log.Info().Str("errMsg", errMsg).Strs("match", match).Msg("[EvmClient] [extractRecoverRange] match")
 	if len(match) > 1 {
+		match[1] = strings.ReplaceAll(match[1], `,`, "")
 		value, err := strconv.ParseUint(match[1], 10, 64)
 		if err != nil {
 			return 0, fmt.Errorf("failed to parse number: %w", err)

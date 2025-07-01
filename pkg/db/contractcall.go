@@ -1,13 +1,11 @@
 package db
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
 	"github.com/rs/zerolog/log"
 	"github.com/scalarorg/data-models/chains"
-	"github.com/scalarorg/data-models/scalarnet"
 	"gorm.io/gorm"
 )
 
@@ -171,16 +169,16 @@ func (db *DatabaseAdapter) UpdateBatchContractCallStatus(data []ContractCallExec
 	})
 }
 
-func (db *DatabaseAdapter) UpdateContractCallWithMintsStatus(ctx context.Context, cmdIds []string, status chains.ContractCallStatus) error {
-	log.Debug().Any("cmdIds", cmdIds).Msg("[DatabaseAdapter] UpdateContractCallWithMintsStatus")
-	err := db.PostgresClient.Transaction(func(tx *gorm.DB) error {
-		eventIds := tx.Model(&scalarnet.ContractCallApprovedWithMint{}).Select("event_id").Where("command_id IN (?)", cmdIds)
-		//only update the token sent that is not success
-		result := tx.Model(&chains.ContractCallWithToken{}).Where("event_id IN (?) and status != ?", eventIds, chains.ContractCallStatusSuccess).Update("status", status)
-		return result.Error
-	})
-	return err
-}
+// func (db *DatabaseAdapter) UpdateContractCallWithMintsStatus(ctx context.Context, cmdIds []string, status chains.ContractCallStatus) error {
+// 	log.Debug().Any("cmdIds", cmdIds).Msg("[DatabaseAdapter] UpdateContractCallWithMintsStatus")
+// 	err := db.PostgresClient.Transaction(func(tx *gorm.DB) error {
+// 		eventIds := tx.Model(&scalarnet.ContractCallApprovedWithMint{}).Select("event_id").Where("command_id IN (?)", cmdIds)
+// 		//only update the token sent that is not success
+// 		result := tx.Model(&chains.ContractCallWithToken{}).Where("event_id IN (?) and status != ?", eventIds, chains.ContractCallStatusSuccess).Update("status", status)
+// 		return result.Error
+// 	})
+// 	return err
+// }
 
 // BatchCreateContractCalls saves multiple contract calls in a single transaction
 func (db *DatabaseAdapter) BatchCreateContractCalls(contractCalls []chains.ContractCall) error {

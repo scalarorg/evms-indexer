@@ -169,7 +169,6 @@ func CreateGateway(networName string, gwAddr string, client *ethclient.Client) (
 
 func (c *EvmClient) Start(ctx context.Context) error {
 	logsChan := make(chan []types.Log, 1024)
-	recordsChan := make(chan map[string][]any, 1024)
 	gatewayAbi, err := evmAbi.GetScalarGatewayAbi()
 	if err != nil {
 		return fmt.Errorf("failed to get scalar gateway abi: %w", err)
@@ -204,8 +203,7 @@ func (c *EvmClient) Start(ctx context.Context) error {
 		}
 	}()
 	// Process recovered logs in dependent go routine
-	go c.ProcessLogs(ctx, eventMap, logsChan, recordsChan)
-	go c.ProcessRecords(ctx, eventMap, recordsChan)
+	go c.ProcessLogs(ctx, eventMap, logsChan)
 	go c.startFetchBlock()
 	c.ConnectWithRetry(ctx)
 	return fmt.Errorf("context cancelled")
@@ -267,13 +265,19 @@ func (c *EvmClient) RecoverAllEvents(ctx context.Context, topics []common.Hash, 
 	if err != nil {
 		return fmt.Errorf("failed to get current block number: %w", err)
 	}
-	recoverRange := uint64(100000)
-	if c.EvmConfig.RecoverRange > 0 && c.EvmConfig.RecoverRange < 100000 {
+	recoverRange := uint64(1000000)
+	if c.EvmConfig.RecoverRange > 0 && c.EvmConfig.RecoverRange < 1000000 {
 		recoverRange = c.EvmConfig.RecoverRange
 	}
-	fromBlock, err := c.dbAdapter.GetLatestBlockFromAllEvents(c.EvmConfig.GetId())
-	if err != nil {
-		return fmt.Errorf("failed to get latest block number: %w", err)
+	fromBlock := uint64(0)
+	if c.dbAdapter != nil {
+		fromBlock, err = c.dbAdapter.GetLatestBlockFromAllEvents(c.EvmConfig.GetId())
+		if err != nil {
+			return fmt.Errorf("failed to get latest block number: %w", err)
+		}
+	}
+	if fromBlock < c.EvmConfig.StartBlock {
+		fromBlock = c.EvmConfig.StartBlock
 	}
 	// Set up a query for logs
 	query := ethereum.FilterQuery{
@@ -281,11 +285,17 @@ func (c *EvmClient) RecoverAllEvents(ctx context.Context, topics []common.Hash, 
 		Topics:    [][]common.Hash{topics}, // Filter by multiple event signatures
 	}
 	logCounter := 0
+	log.Info().Str("Chain", c.EvmConfig.ID).
+		Uint64("FromBlock", fromBlock).
+		Uint64("RecoverRange", recoverRange).
+		Uint64("CurrentBlockNumber", currentBlockNumber).
+		Msg("[EvmClient] [RecoverAllEvents] starting recover all events")
 	for fromBlock < currentBlockNumber {
 		setQueryRange(&query, fromBlock, recoverRange, currentBlockNumber)
 		start := time.Now()
 		logs, err := c.Client.FilterLogs(context.Background(), query)
 		if err != nil {
+			log.Error().Err(err).Msgf("[EvmClient] [RecoverEvents] failed to filter logs")
 			recoverRange, err = extractRecoverRange(err.Error())
 			if err != nil {
 				log.Error().Err(err).Msgf("[EvmClient] [RecoverEvents] failed to extract recover range from error message: %s", err.Error())
@@ -297,9 +307,9 @@ func (c *EvmClient) RecoverAllEvents(ctx context.Context, topics []common.Hash, 
 			continue
 		}
 		if len(logs) > 0 {
-			logsChan <- logs
 			log.Info().Str("Chain", c.EvmConfig.ID).Msgf("[EvmClient] [RecoverEvents] found %d logs, [%d, %d]/%d, time: %s",
 				len(logs), fromBlock, query.ToBlock, currentBlockNumber, time.Since(start))
+			logsChan <- logs
 			logCounter += len(logs)
 		}
 		//Set fromBlock to the next block number for next iteration
@@ -939,14 +949,10 @@ func (c *EvmClient) recoverExecutedEvents(lastCheckpoint *SimpleCheckpoint) erro
 
 // processTokenSentEventsBatch processes TokenSent events in batch
 func (c *EvmClient) processTokenSentEventsBatch(events []*parser.EvmEvent[*contracts.IScalarGatewayTokenSent]) error {
-	var tokenSents []chains.TokenSent
+	var tokenSents []*chains.TokenSent
 
 	for _, evt := range events {
-		tokenSent, err := c.TokenSentEvent2Model(evt.Args)
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to convert TokenSent event to model")
-			continue
-		}
+		tokenSent := parser.TokenSentEvent2Model(c.EvmConfig.GetId(), evt.Args)
 		tokenSents = append(tokenSents, tokenSent)
 	}
 
@@ -992,10 +998,10 @@ func (c *EvmClient) processContractCallApprovedEventsBatch(events []*parser.EvmE
 
 // processExecutedEventsBatch processes Executed events in batch
 func (c *EvmClient) processExecutedEventsBatch(events []*parser.EvmEvent[*contracts.IScalarGatewayExecuted]) error {
-	var commandExecuteds []chains.CommandExecuted
+	var commandExecuteds []*chains.CommandExecuted
 
 	for _, evt := range events {
-		cmdExecuted := c.CommandExecutedEvent2Model(evt.Args)
+		cmdExecuted := parser.CommandExecutedEvent2Model(c.EvmConfig.GetId(), evt.Args)
 		commandExecuteds = append(commandExecuteds, cmdExecuted)
 	}
 

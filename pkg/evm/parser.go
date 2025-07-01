@@ -49,16 +49,6 @@ func parseEventLog(sourceChain string, event *abi.Event, txLog types.Log) (any, 
 		}
 		model := parser.ContractCallWithTokenEvent2Model(sourceChain, contractCallWithToken)
 		return contractCallWithToken, model, nil
-	case evmAbi.EVENT_EVM_REDEEM_TOKEN:
-		redeemToken := &contracts.IScalarGatewayRedeemToken{
-			Raw: txLog,
-		}
-		err := parser.ParseEventData(&txLog, event, redeemToken)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to parse event %s: %w", event.Name, err)
-		}
-		model := parser.RedeemTokenEvent2Model(sourceChain, redeemToken)
-		return redeemToken, model, nil
 	case evmAbi.EVENT_EVM_CONTRACT_CALL:
 		contractCall := &contracts.IScalarGatewayContractCall{
 			Raw: txLog,
@@ -79,6 +69,16 @@ func parseEventLog(sourceChain string, event *abi.Event, txLog types.Log) (any, 
 		}
 		model := parser.ContractCallApprovedEvent2Model(sourceChain, contractCallApproved)
 		return contractCallApproved, model, nil
+	case evmAbi.EVENT_EVM_REDEEM_TOKEN:
+		redeemToken := &contracts.IScalarGatewayRedeemToken{
+			Raw: txLog,
+		}
+		err := parser.ParseEventData(&txLog, event, redeemToken)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to parse event %s: %w", event.Name, err)
+		}
+		model := parser.RedeemTokenEvent2Model(sourceChain, redeemToken)
+		return redeemToken, model, nil
 	case evmAbi.EVENT_EVM_COMMAND_EXECUTED:
 		executed := &contracts.IScalarGatewayExecuted{
 			Raw: txLog,

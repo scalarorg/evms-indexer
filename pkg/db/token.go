@@ -8,6 +8,7 @@ import (
 	"github.com/scalarorg/data-models/chains"
 	"github.com/scalarorg/data-models/scalarnet"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // find relay datas by token sent attributes
@@ -70,15 +71,25 @@ func (db *DatabaseAdapter) SaveTokenSentsAndRemoveDupplicates(tokenSents []*chai
 }
 
 func (db *DatabaseAdapter) SaveTokenSents(tokenSents []*chains.TokenSent) error {
-	result := db.PostgresClient.Save(tokenSents)
+	result := db.PostgresClient.Clauses(
+		clause.OnConflict{
+			Columns:   []clause.Column{{Name: "event_id"}},
+			DoNothing: true,
+		},
+	).Create(tokenSents)
 	if result.Error != nil {
 		return result.Error
 	}
 	return nil
 }
 
-func (db *DatabaseAdapter) SaveTokenSent(tokenSent chains.TokenSent) error {
-	result := db.PostgresClient.Save(&tokenSent)
+func (db *DatabaseAdapter) SaveTokenSent(tokenSent *chains.TokenSent) error {
+	result := db.PostgresClient.Clauses(
+		clause.OnConflict{
+			Columns:   []clause.Column{{Name: "event_id"}},
+			DoNothing: true,
+		},
+	).Create(tokenSent)
 	if result.Error != nil {
 		return fmt.Errorf("failed to create evm token send: %w", result.Error)
 	}
@@ -113,7 +124,7 @@ func (db *DatabaseAdapter) SaveTokenDeployed(tokenDeployed *chains.TokenDeployed
 }
 
 // BatchSaveTokenSents saves multiple token sent records in a single transaction
-func (db *DatabaseAdapter) BatchSaveTokenSents(tokenSents []chains.TokenSent) error {
+func (db *DatabaseAdapter) BatchSaveTokenSents(tokenSents []*chains.TokenSent) error {
 	if len(tokenSents) == 0 {
 		return nil
 	}
@@ -139,12 +150,17 @@ func (db *DatabaseAdapter) BatchSaveTokenDeployed(tokenDeployed []*chains.TokenD
 }
 
 // BatchSaveCommandExecuted saves multiple command executed records in a single transaction
-func (db *DatabaseAdapter) BatchSaveCommandExecuted(commandExecuted []chains.CommandExecuted) error {
+func (db *DatabaseAdapter) BatchSaveCommandExecuted(commandExecuted []*chains.CommandExecuted) error {
 	if len(commandExecuted) == 0 {
 		return nil
 	}
 
-	result := db.PostgresClient.Create(&commandExecuted)
+	result := db.PostgresClient.Clauses(
+		clause.OnConflict{
+			Columns:   []clause.Column{{Name: "command_id"}},
+			DoNothing: true,
+		},
+	).Create(&commandExecuted)
 	if result.Error != nil {
 		return fmt.Errorf("failed to batch save command executed: %w", result.Error)
 	}

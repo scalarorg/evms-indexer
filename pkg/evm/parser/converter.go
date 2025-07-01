@@ -98,8 +98,8 @@ func ContractCallWithTokenEvent2Model(sourceChain string, event *contracts.IScal
 	return &contractCallWithToken
 }
 
-func CommandExecutedEvent2Model(sourceChain string, event *contracts.IScalarGatewayExecuted) chains.CommandExecuted {
-	cmdExecuted := chains.CommandExecuted{
+func CommandExecutedEvent2Model(sourceChain string, event *contracts.IScalarGatewayExecuted) *chains.CommandExecuted {
+	return &chains.CommandExecuted{
 		SourceChain: sourceChain,
 		Address:     event.Raw.Address.String(),
 		TxHash:      strings.ToLower(event.Raw.TxHash.String()),
@@ -107,22 +107,20 @@ func CommandExecutedEvent2Model(sourceChain string, event *contracts.IScalarGate
 		LogIndex:    uint(event.Raw.Index),
 		CommandID:   hex.EncodeToString(event.CommandId[:]),
 	}
-	return cmdExecuted
 }
 
-func TokenDeployedEvent2Model(sourceChain string, event *contracts.IScalarGatewayTokenDeployed) chains.TokenDeployed {
-	tokenDeployed := chains.TokenDeployed{
+func TokenDeployedEvent2Model(sourceChain string, event *contracts.IScalarGatewayTokenDeployed) *chains.TokenDeployed {
+	return &chains.TokenDeployed{
 		SourceChain:  sourceChain,
 		BlockNumber:  uint64(event.Raw.BlockNumber),
 		TxHash:       event.Raw.TxHash.String(),
 		Symbol:       event.Symbol,
 		TokenAddress: event.TokenAddresses.String(),
 	}
-	return tokenDeployed
 }
 
-func SwitchPhaseEvent2Model(sourceChain string, event *contracts.IScalarGatewaySwitchPhase) chains.SwitchedPhase {
-	switchPhase := chains.SwitchedPhase{
+func SwitchPhaseEvent2Model(sourceChain string, event *contracts.IScalarGatewaySwitchPhase) *chains.SwitchedPhase {
+	return &chains.SwitchedPhase{
 		SourceChain:       sourceChain,
 		BlockNumber:       uint64(event.Raw.BlockNumber),
 		TxHash:            event.Raw.TxHash.String(),
@@ -131,7 +129,6 @@ func SwitchPhaseEvent2Model(sourceChain string, event *contracts.IScalarGatewayS
 		From:              event.From,
 		To:                event.To,
 	}
-	return switchPhase
 }
 
 func TokenSentEvent2Model(sourceChain string, event *contracts.IScalarGatewayTokenSent) *chains.TokenSent {

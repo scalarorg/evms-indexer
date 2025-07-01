@@ -3,7 +3,6 @@ package evm
 import (
 	"encoding/hex"
 	"fmt"
-	"strings"
 
 	chains "github.com/scalarorg/data-models/chains"
 	contracts "github.com/scalarorg/evms-indexer/pkg/evm/contracts/generated"
@@ -142,28 +141,6 @@ func (c *EvmClient) RedeemTokenEvent2Model(event *contracts.IScalarGatewayRedeem
 	return &contractCallWithToken, nil
 }
 
-func (c *EvmClient) TokenSentEvent2Model(event *contracts.IScalarGatewayTokenSent) (chains.TokenSent, error) {
-	normalizedTxHash := utils.NormalizeHash(event.Raw.TxHash.String())
-	eventId := fmt.Sprintf("%s-%d", normalizedTxHash, event.Raw.Index)
-	senderAddress := event.Sender.String()
-	tokenSent := chains.TokenSent{
-		EventID:     eventId,
-		SourceChain: c.EvmConfig.GetId(),
-		TxHash:      normalizedTxHash,
-		BlockNumber: event.Raw.BlockNumber,
-		LogIndex:    event.Raw.Index,
-		//3 follows field are used for query to get back payload, so need to convert to lower case
-		SourceAddress:        strings.ToLower(senderAddress),
-		DestinationChain:     event.DestinationChain,
-		DestinationAddress:   strings.ToLower(event.DestinationAddress),
-		Symbol:               event.Symbol,
-		TokenContractAddress: c.GetTokenContractAddressFromSymbol(event.Symbol),
-		Amount:               event.Amount.Uint64(),
-		Status:               chains.TokenSentStatusPending,
-	}
-	return tokenSent, nil
-}
-
 // Todo: Implement this function
 func (c *EvmClient) GetTokenContractAddressFromSymbol(symbol string) string {
 	address, ok := c.TokenAddresses[symbol]
@@ -177,18 +154,6 @@ func (c *EvmClient) GetTokenContractAddressFromSymbol(symbol string) string {
 	}
 	c.TokenAddresses[symbol] = tokenAddress.String()
 	return tokenAddress.String()
-}
-
-func (c *EvmClient) CommandExecutedEvent2Model(event *contracts.IScalarGatewayExecuted) chains.CommandExecuted {
-	cmdExecuted := chains.CommandExecuted{
-		SourceChain: c.EvmConfig.GetId(),
-		Address:     event.Raw.Address.String(),
-		TxHash:      strings.ToLower(event.Raw.TxHash.String()),
-		BlockNumber: uint64(event.Raw.BlockNumber),
-		LogIndex:    uint(event.Raw.Index),
-		CommandID:   hex.EncodeToString(event.CommandId[:]),
-	}
-	return cmdExecuted
 }
 
 func (c *EvmClient) TokenDeployedEvent2Model(event *contracts.IScalarGatewayTokenDeployed) chains.TokenDeployed {

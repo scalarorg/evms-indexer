@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/hex"
 	"math/big"
+	"reflect"
 	"testing"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/scalarorg/data-models/chains"
 	"github.com/scalarorg/evms-indexer/pkg/evm"
 	contracts "github.com/scalarorg/evms-indexer/pkg/evm/contracts/generated"
 	"github.com/stretchr/testify/assert"
@@ -49,4 +51,94 @@ func TestConvertContractCallWithToken2Model(t *testing.T) {
 	t.Logf("contractCallWithToken %v", contractCallWithToken)
 	assert.Equal(t, "tb1q03y3wd3wy4tgsk9msyn4zyreg63uw6dk0fndvk", contractCallWithToken.DestinationAddress)
 
+}
+
+func TestCalculateOptimalBatchSize(t *testing.T) {
+	// Test with TokenSent struct
+	tokenSentType := reflect.TypeOf(&chains.TokenSent{})
+	batchSize := evm.CalculateOptimalBatchSize(tokenSentType)
+
+	// TokenSent has many fields, so batch size should be smaller
+	assert.True(t, batchSize > 0, "Batch size should be positive")
+	assert.True(t, batchSize <= evm.BATCH_SIZE, "Batch size should not exceed BATCH_SIZE")
+
+	t.Logf("TokenSent field count: %d, optimal batch size: %d", tokenSentType.Elem().NumField(), batchSize)
+
+	// Test with TokenDeployed struct (fewer fields)
+	tokenDeployedType := reflect.TypeOf(&chains.TokenDeployed{})
+	batchSizeDeployed := evm.CalculateOptimalBatchSize(tokenDeployedType)
+
+	// TokenDeployed has fewer fields, so batch size should be larger
+	assert.True(t, batchSizeDeployed > 0, "Batch size should be positive")
+	assert.True(t, batchSizeDeployed <= evm.BATCH_SIZE, "Batch size should not exceed BATCH_SIZE")
+
+	t.Logf("TokenDeployed field count: %d, optimal batch size: %d", tokenDeployedType.Elem().NumField(), batchSizeDeployed)
+
+	// TokenDeployed should have larger batch size than TokenSent due to fewer fields
+	assert.True(t, batchSizeDeployed >= batchSize, "TokenDeployed should have larger or equal batch size due to fewer fields")
+}
+
+func TestChunkRecords(t *testing.T) {
+	// Create test records
+	records := make([]any, 2500)
+	for i := range records {
+		records[i] = &chains.TokenDeployed{}
+	}
+
+	// Test chunking with different batch sizes
+	testCases := []struct {
+		name      string
+		batchSize int
+		expected  int
+	}{
+		{"small batch", 100, 25},
+		{"medium batch", 500, 5},
+		{"large batch", 1000, 3},
+		{"very large batch", 3000, 1},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			chunks := evm.ChunkRecords(records, tc.batchSize)
+			assert.Equal(t, tc.expected, len(chunks), "Number of chunks should match expected")
+
+			// Verify all records are included
+			totalRecords := 0
+			for _, chunk := range chunks {
+				totalRecords += len(chunk)
+			}
+			assert.Equal(t, len(records), totalRecords, "All records should be included in chunks")
+
+			// Verify no chunk exceeds batch size (except possibly the last one)
+			for i, chunk := range chunks {
+				if i < len(chunks)-1 {
+					assert.Equal(t, tc.batchSize, len(chunk), "All chunks except the last should have exactly batchSize records")
+				} else {
+					assert.LessOrEqual(t, len(chunk), tc.batchSize, "Last chunk should not exceed batch size")
+				}
+			}
+		})
+	}
+}
+
+func TestChunkRecordsEmpty(t *testing.T) {
+	// Test with empty records
+	chunks := evm.ChunkRecords([]any{}, 100)
+	assert.Nil(t, chunks, "Empty records should return nil chunks")
+
+	// Test with nil records
+	chunks = evm.ChunkRecords(nil, 100)
+	assert.Nil(t, chunks, "Nil records should return nil chunks")
+}
+
+func TestChunkRecordsSmallerThanBatch(t *testing.T) {
+	// Test with fewer records than batch size
+	records := make([]any, 50)
+	for i := range records {
+		records[i] = &chains.TokenDeployed{}
+	}
+
+	chunks := evm.ChunkRecords(records, 100)
+	assert.Equal(t, 1, len(chunks), "Should have exactly one chunk")
+	assert.Equal(t, 50, len(chunks[0]), "Chunk should contain all records")
 }
