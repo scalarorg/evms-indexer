@@ -19,9 +19,10 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/rs/zerolog/log"
 	chains "github.com/scalarorg/data-models/chains"
-	"github.com/scalarorg/data-models/scalarnet"
 	"github.com/scalarorg/evms-indexer/config"
 	"github.com/scalarorg/evms-indexer/pkg/evm"
+	"github.com/scalarorg/evms-indexer/pkg/evm/abi"
+	evmAbi "github.com/scalarorg/evms-indexer/pkg/evm/abi"
 	contracts "github.com/scalarorg/evms-indexer/pkg/evm/contracts/generated"
 	"github.com/stretchr/testify/require"
 )
@@ -194,13 +195,36 @@ func TestEvmClientListenEVMExecutedEvent(t *testing.T) {
 	select {}
 }
 func TestRecoverEvent(t *testing.T) {
-	fnCreateEventData := func(log types.Log) *contracts.IScalarGatewayContractCall {
-		return &contracts.IScalarGatewayContractCall{
-			Raw: log,
-		}
-	}
-	err := evm.RecoverEvent[*contracts.IScalarGatewayContractCall](sepoliaClient, context.Background(), evm.EVENT_EVM_CONTRACT_CALL, fnCreateEventData)
+	logsChan := make(chan []types.Log)
+	gatewayAbi, err := evmAbi.GetScalarGatewayAbi()
 	require.NoError(t, err)
+	eventNames := []string{
+		evmAbi.EVENT_EVM_CONTRACT_CALL,
+		evmAbi.EVENT_EVM_CONTRACT_CALL_WITH_TOKEN,
+		evmAbi.EVENT_EVM_TOKEN_SENT,
+		evmAbi.EVENT_EVM_CONTRACT_CALL_APPROVED,
+		evmAbi.EVENT_EVM_COMMAND_EXECUTED,
+		evmAbi.EVENT_EVM_TOKEN_DEPLOYED,
+		evmAbi.EVENT_EVM_SWITCHED_PHASE,
+		evmAbi.EVENT_EVM_REDEEM_TOKEN,
+	}
+	topics := []common.Hash{}
+	for _, eventName := range eventNames {
+		event, ok := gatewayAbi.Events[eventName]
+		if !ok {
+			log.Warn().Str("eventName", eventName).Msg("Event not found in ABI")
+			continue
+		}
+		topics = append(topics, event.ID)
+	}
+	err = sepoliaClient.RecoverAllEvents(context.Background(), topics, logsChan)
+	require.NoError(t, err)
+	select {
+	case logs := <-logsChan:
+		fmt.Printf("logs %v\n", logs)
+	case <-time.After(10 * time.Second):
+		fmt.Println("Timeout waiting for logs")
+	}
 }
 func TestEvmSubscribe(t *testing.T) {
 	fmt.Println("Test evm client")
@@ -260,15 +284,12 @@ func TestRecoverEventTokenSent(t *testing.T) {
 	//Get current block number
 	blockNumber, err := bnbClient.Client.BlockNumber(context.Background())
 	require.NoError(t, err)
-	lastCheckpoint := scalarnet.EventCheckPoint{
-		ChainName:   bnbConfig.ID,
-		EventName:   evm.EVENT_EVM_TOKEN_SENT,
+	lastCheckpoint := evm.SimpleCheckpoint{
 		BlockNumber: blockNumber - 10000,
 		TxHash:      "",
 		LogIndex:    0,
-		EventKey:    "",
 	}
-	missingEvents, err := evm.GetMissingEvents[*contracts.IScalarGatewayTokenSent](bnbClient, evm.EVENT_EVM_TOKEN_SENT,
+	missingEvents, err := evm.GetMissingEventsSingle[*contracts.IScalarGatewayTokenSent](bnbClient, abi.EVENT_EVM_TOKEN_SENT,
 		&lastCheckpoint, func(log types.Log) *contracts.IScalarGatewayTokenSent {
 			return &contracts.IScalarGatewayTokenSent{
 				Raw: log,
@@ -284,15 +305,12 @@ func TestRecoverEventContractCallWithToken(t *testing.T) {
 	blockNumber, err := bnbClient.Client.BlockNumber(context.Background())
 	fmt.Printf("blockNumber %v\n", blockNumber)
 	require.NoError(t, err)
-	lastCheckpoint := scalarnet.EventCheckPoint{
-		ChainName:   bnbConfig.ID,
-		EventName:   evm.EVENT_EVM_CONTRACT_CALL_WITH_TOKEN,
+	lastCheckpoint := evm.SimpleCheckpoint{
 		BlockNumber: bnbConfig.StartBlock,
 		TxHash:      "",
 		LogIndex:    0,
-		EventKey:    "",
 	}
-	missingEvents, err := evm.GetMissingEvents[*contracts.IScalarGatewayContractCallWithToken](bnbClient, evm.EVENT_EVM_CONTRACT_CALL_WITH_TOKEN,
+	missingEvents, err := evm.GetMissingEventsSingle[*contracts.IScalarGatewayContractCallWithToken](bnbClient, abi.EVENT_EVM_CONTRACT_CALL_WITH_TOKEN,
 		&lastCheckpoint, func(log types.Log) *contracts.IScalarGatewayContractCallWithToken {
 			return &contracts.IScalarGatewayContractCallWithToken{
 				Raw: log,

@@ -96,7 +96,7 @@ func (db *DatabaseAdapter) GetLatestBlockFromAllEvents(chainId string) (uint64, 
 
 	// Check token_deployed table
 	var tokenDeployed chains.TokenDeployed
-	result = db.PostgresClient.Where("chain = ?", chainId).Order("block_number DESC").First(&tokenDeployed)
+	result = db.PostgresClient.Where("source_chain = ?", chainId).Order("block_number DESC").First(&tokenDeployed)
 	if result.Error == nil && tokenDeployed.BlockNumber > maxBlock {
 		maxBlock = tokenDeployed.BlockNumber
 	}

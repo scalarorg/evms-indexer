@@ -1,4 +1,4 @@
-package evm
+package parser
 
 type BTCFeeOpts int32
 

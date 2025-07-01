@@ -39,22 +39,9 @@ func NewService(config *config.Config) (*Service, error) {
 func (s *Service) Start(ctx context.Context) error {
 	// Start EVM clients (shared database)
 	for _, client := range s.EvmClients {
-		// Process recovered logs in dependent go routine
-		go client.ProcessMissingLogs()
-
 		// Start listening to new events immediately
 		go func(c *evm.EvmClient) {
 			c.Start(ctx)
-		}(client)
-
-		// Recover all events in parallel
-		go func(c *evm.EvmClient) {
-			err := c.RecoverAllEvents(ctx)
-			if err != nil {
-				log.Warn().Err(err).Msgf("[Indexer] [Start] cannot recover events for evm client %s", c.EvmConfig.GetId())
-			} else {
-				log.Info().Msgf("[Indexer] [Start] recovered missing events for evm client %s", c.EvmConfig.GetId())
-			}
 		}(client)
 	}
 
