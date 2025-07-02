@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -56,7 +57,8 @@ func (ec *EvmClient) ProcessLogsFromRecovery(ctx context.Context, mapEvents map[
 			return ctx.Err()
 		case logs, ok := <-logsChan:
 			if !ok {
-				return ctx.Err()
+				time.Sleep(100 * time.Millisecond)
+				continue
 			}
 
 			mapRecords := make(map[string][]any)

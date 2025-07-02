@@ -124,6 +124,7 @@ func (c *BtcClient) parseVaultTransactionData(tx *wire.MsgTx, vaultReturnTxOutpu
 	return vaultTx, nil
 }
 
+// TODO: cache previous txout
 func (c *BtcClient) getPreviousTxout(output *wire.OutPoint) (*wire.TxOut, error) {
 	tx, err := c.rpcClient.GetRawTransaction(&output.Hash)
 	if err != nil {

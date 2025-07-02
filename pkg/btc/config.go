@@ -30,6 +30,7 @@ type BtcConfig struct {
 	BatchSize            int           `json:"batch_size"`
 	Confirmations        int           `json:"confirmations"`
 	SourceChain          string        `json:"source_chain"`
+	FetchThread          int           `json:"fetch_thread"` // Number of worker threads for fetching blocks
 }
 
 // UnmarshalJSON implements custom JSON unmarshaling to handle string-to-time.Duration conversion

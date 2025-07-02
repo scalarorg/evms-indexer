@@ -8,17 +8,19 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
+	ethTypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/rs/zerolog/log"
 	chains "github.com/scalarorg/data-models/chains"
+	"github.com/scalarorg/evms-indexer/pkg/types"
 )
 
 // RecoverAllEvents recovers all events from the latest block in the database
-func (c *EvmClient) RecoverAllEvents(ctx context.Context, topics []common.Hash, logsChan chan<- []types.Log) error {
+func (c *EvmClient) RecoverAllEvents(ctx context.Context, topics []common.Hash, logsChan chan<- []ethTypes.Log) error {
 	currentBlockNumber, err := c.Client.BlockNumber(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to get current block number: %w", err)
@@ -106,23 +108,53 @@ func extractRecoverRange(errMsg string) (uint64, error) {
 }
 
 func (c *EvmClient) fetchBlocks(ctx context.Context, blockHeightsChan <-chan map[uint64]uint8) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case blockHeights := <-blockHeightsChan:
-			for blockNumber, _ := range blockHeights {
-				go func(blockNumber uint64) {
+	fetchThread := c.EvmConfig.FetchThread
+	if fetchThread == 0 {
+		fetchThread = 10
+	}
+
+	// Create a worker pool for fetching blocks
+	blockQueue := types.NewOrderedQueue(func(a, b uint64) int {
+		if a < b {
+			return -1
+		} else if a > b {
+			return 1
+		}
+		return 0
+	})
+	var wg sync.WaitGroup
+
+	// Start fixed number of worker goroutines
+	for i := 0; i < fetchThread; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					blockNumber, ok := blockQueue.Pop()
+					if !ok {
+						// Queue is empty, wait a bit before checking again
+						time.Sleep(10 * time.Millisecond)
+						continue
+					}
+
+					// Fetch block
 					block, err := c.Client.BlockByNumber(context.Background(), big.NewInt(int64(blockNumber)))
 					if err != nil {
-						log.Error().Err(err).Msgf("[EvmClient] [startFetchBlock] failed to fetch block %d", blockNumber)
+						log.Error().Err(err).Msgf("[EvmClient] [worker-%d] failed to fetch block %d", workerID, blockNumber)
+						continue
 					} else if block == nil {
-						log.Error().Msgf("[EvmClient] [startFetchBlock] block %d not found", blockNumber)
+						log.Error().Msgf("[EvmClient] [worker-%d] block %d not found", workerID, blockNumber)
+						continue
 					} else {
 						log.Info().Uint64("BlockNumber", block.NumberU64()).
 							Str("BlockHash", hex.EncodeToString(block.Hash().Bytes())).
 							Uint64("BlockTime", block.Time()).
-							Msgf("[EvmClient] [startFetchBlock] found block")
+							Int("WorkerID", workerID).
+							Msgf("[EvmClient] [worker-%d] found block", workerID)
 
 						blockHeader := &chains.BlockHeader{
 							Chain:       c.EvmConfig.GetId(),
@@ -136,10 +168,27 @@ func (c *EvmClient) fetchBlocks(ctx context.Context, blockHeightsChan <-chan map
 						}
 						err = c.dbAdapter.CreateBlockHeader(blockHeader)
 						if err != nil {
-							log.Error().Err(err).Msgf("[EvmClient] [startFetchBlock] failed to save block header %d", blockNumber)
+							log.Error().Err(err).Msgf("[EvmClient] [worker-%d] failed to save block header %d", workerID, blockNumber)
 						}
 					}
-				}(blockNumber)
+				}
+			}
+		}(i)
+	}
+
+	// Process incoming block heights
+	for {
+		select {
+		case <-ctx.Done():
+			wg.Wait()
+			return
+		case blockHeights, ok := <-blockHeightsChan:
+			if !ok {
+				wg.Wait()
+				return
+			}
+			for blockNumber := range blockHeights {
+				blockQueue.Push(blockNumber)
 			}
 		}
 	}

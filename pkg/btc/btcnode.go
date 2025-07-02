@@ -18,7 +18,10 @@ type BlockWithHeight struct {
 	Block  *wire.MsgBlock
 	Height int32
 }
-
+type BockHashWithHeight struct {
+	blockHash *chainhash.Hash
+	height    int64
+}
 type BlockHeaderWithHeight struct {
 	BlockHeader *wire.BlockHeader
 	Height      int64
@@ -27,7 +30,8 @@ type BlockHeaderWithHeight struct {
 // TODO: handle reorg
 func (c *BtcClient) StartBtcIndexer(ctx context.Context) error {
 	blockChan := make(chan *btcjson.GetBlockVerboseTxResult, 1024)
-	blockHashesChan := make(chan map[int64]*chainhash.Hash, 1024)
+	blockHashesChan := make(chan BockHashWithHeight, 1024)
+	blockHeightChan := make(chan int64, 1024)
 	log.Info().Msg("Starting BTC indexer")
 	// Goroutine 1: Periodically fetch new BTC blocks and send to channel
 	go func() {
@@ -37,6 +41,8 @@ func (c *BtcClient) StartBtcIndexer(ctx context.Context) error {
 			log.Warn().Err(err).Msg("Failed to fetch block hashes")
 		}
 	}()
+	//We saparate fetching block hashes from fetching block data for future usel
+	go c.fetchBlockHashes(ctx, blockHeightChan, blockHashesChan)
 	// Goroutine 2: Receive block data, parse VaultTransactions, write to DB
 	go func() {
 		err := c.indexBlock(ctx, blockChan)
@@ -44,7 +50,7 @@ func (c *BtcClient) StartBtcIndexer(ctx context.Context) error {
 			log.Warn().Err(err).Msg("Failed to index blocks")
 		}
 	}()
-	err := c.orchestrateFetching(ctx, blockHashesChan)
+	err := c.orchestrateFetching(ctx, blockHeightChan)
 	if err != nil {
 		log.Warn().Err(err).Msg("Failed to fetch data")
 	}
@@ -52,7 +58,7 @@ func (c *BtcClient) StartBtcIndexer(ctx context.Context) error {
 }
 
 func (c *BtcClient) orchestrateFetching(ctx context.Context,
-	blockHashesChan chan<- map[int64]*chainhash.Hash) error {
+	blockHeightChan chan<- int64) error {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	lastHeight, err := c.GetLatestIndexedHeight(ctx)
@@ -92,23 +98,17 @@ func (c *BtcClient) orchestrateFetching(ctx context.Context,
 			if startHeight > endHeight {
 				continue
 			}
-
-			// Step 1: Define chunks from lastHeight to latestHeight
-			chunks := c.defineChunks(startHeight, endHeight)
-			log.Debug().Int("numChunks", len(chunks)).Msg("Defined chunks for processing")
-
-			// Step 2: Process each chunk
-			for i, chunk := range chunks {
-				start := time.Now()
-				blockHashes, err := c.fetchBlockHashes(ctx, chunk)
-				if err != nil {
-					log.Warn().Err(err).Int("chunkIndex", i).Msg("Failed to process chunk")
-					continue
-				}
-				log.Debug().Int("chunkIndex", i).Int64("startHeight", chunk.Start).Int64("endHeight", chunk.End).
-					Msgf("Fetched block hashes for chunk in %f seconds", time.Since(start).Seconds())
-				blockHashesChan <- blockHashes
+			for height := startHeight; height <= endHeight; height++ {
+				blockHeightChan <- height
 			}
+			// Step 1: Define chunks from lastHeight to latestHeight
+			// chunks := c.defineChunks(startHeight, endHeight)
+			// log.Debug().Int("numChunks", len(chunks)).Msg("Defined chunks for processing")
+
+			// // Step 2: Process each chunk
+			// for _, chunk := range chunks {
+			// 	chunkChan <- chunk
+			// }
 
 			// Update lastHeight to latestHeight
 			startHeight = endHeight + 1
@@ -126,7 +126,7 @@ type Chunk struct {
 func (c *BtcClient) defineChunks(startHeight, endHeight int64) []Chunk {
 	batchSize := c.config.BatchSize
 	if batchSize <= 0 {
-		batchSize = 10 // default batch size
+		batchSize = 64 // default batch size
 	}
 
 	var chunks []Chunk
@@ -148,57 +148,48 @@ func (c *BtcClient) defineChunks(startHeight, endHeight int64) []Chunk {
 	return chunks
 }
 
-// fetchBlockHashes processes a single chunk of block heights
-func (c *BtcClient) fetchBlockHashes(ctx context.Context, chunk Chunk) (map[int64]*chainhash.Hash, error) {
-	// Use async group to collect block hashes from futures
-	blockHashes := make(map[int64]*chainhash.Hash)
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	for height := chunk.Start; height <= chunk.End; height++ {
-		wg.Add(1)
-		go func(h int64) {
-			defer wg.Done()
-			blockHash, err := c.rpcClient.GetBlockHash(h)
-			if err != nil {
-				log.Warn().Err(err).Int64("height", h).Msg("Failed to get BTC block hash")
-				return
-			}
-
-			// Safely add to the map
-			mu.Lock()
-			blockHashes[h] = blockHash
-			mu.Unlock()
-		}(height)
-	}
-	// Wait for all block hash futures to complete
-	wg.Wait()
-
-	log.Debug().Int64("startHeight", chunk.Start).Int64("endHeight", chunk.End).Int("fetchedBlockHashes", len(blockHashes)).Msg("Completed processing chunk")
-	return blockHashes, nil
-}
-func (c *BtcClient) fetchBlockData(ctx context.Context, blockHashesChan <-chan map[int64]*chainhash.Hash,
+func (c *BtcClient) fetchBlockData(ctx context.Context, blockHashesChan <-chan BockHashWithHeight,
 	blockChan chan<- *btcjson.GetBlockVerboseTxResult) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case blockHashes, ok := <-blockHashesChan:
-			if !ok {
-				return ctx.Err()
-			}
-			for height, blockHash := range blockHashes {
-				go func(h int64, hash *chainhash.Hash) {
-					log.Info().Msgf("Fetching block: height %d, hash %s", h, hash.String())
-					block, err := c.rpcClient.GetBlockVerboseTx(hash)
-					if err != nil {
-						log.Warn().Err(err).Int64("height", h).Msg("Failed to get BTC block")
-						return
-					}
-					blockChan <- block
-				}(height, blockHash)
-			}
-		}
+
+	// Create a worker pool for fetching full blocks
+	numWorkers := 10 // Default number of workers for fetching full blocks
+	if c.config.FetchThread > 0 {
+		numWorkers = c.config.FetchThread
 	}
+	var wg sync.WaitGroup
+	// Start workers
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case blockRequest, ok := <-blockHashesChan:
+					if !ok {
+						// Queue is empty, wait a bit before checking again
+						time.Sleep(10 * time.Millisecond)
+						continue
+					}
+					// Fetch full block
+					start := time.Now()
+					block, err := c.rpcClient.GetBlockVerboseTx(blockRequest.blockHash)
+					if err != nil {
+						log.Warn().Err(err).Int64("height", blockRequest.height).Int("workerID", workerID).Msg("Failed to get BTC block")
+						continue
+					} else {
+						log.Info().Int("workerID", workerID).
+							Msgf("[BtcClient] Fetched block: height %d, hash %s in %fs",
+								blockRequest.height, blockRequest.blockHash.String(), time.Since(start).Seconds())
+						blockChan <- block
+					}
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+	return nil
 }
 
 func extractBlockHeader(block *btcjson.GetBlockVerboseTxResult) (*wire.BlockHeader, error) {
@@ -218,11 +209,8 @@ func (c *BtcClient) indexBlock(ctx context.Context, blockChan <-chan *btcjson.Ge
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case block, ok := <-blockChan:
-			if !ok {
-				return ctx.Err()
-			}
-
+		case block := <-blockChan:
+			start := time.Now()
 			blockHeader, err := extractBlockHeader(block)
 			if err != nil {
 				log.Warn().Err(err).Msg("Failed to extract block header")
@@ -250,9 +238,11 @@ func (c *BtcClient) indexBlock(ctx context.Context, blockChan <-chan *btcjson.Ge
 
 			// Store block header
 			c.StoreBlockHeader(ctx, blockHeader, block.Height)
-
+			start = time.Now()
 			// Process transactions
 			vaultTxs := []*chains.VaultTransaction{}
+			// In each vault transaction, we need to get previous txout to get the staker script pubkey
+			// This request is expensive, so we need to cache the previous txout -> TODO: cache previous txout
 			for i, tx := range block.Tx {
 				vaultTx, err := c.ParseVaultTxRawResult(&tx, block, i)
 				if err != nil {
@@ -262,45 +252,48 @@ func (c *BtcClient) indexBlock(ctx context.Context, blockChan <-chan *btcjson.Ge
 					vaultTxs = append(vaultTxs, vaultTx)
 				}
 			}
+
 			if len(vaultTxs) > 0 {
-				log.Info().Int64("height", block.Height).Int("vaultTxs", len(vaultTxs)).Msg("Parsed and saved vault transactions from block")
 				err := c.StoreVaultTransactions(vaultTxs)
 				if err != nil {
 					log.Warn().Err(err).Msg("Failed to save vault transaction")
 				}
+				log.Info().Int64("height", block.Height).Int("vaultTxs", len(vaultTxs)).
+					Msgf("Saved vault transactions from block in %fs", time.Since(start).Seconds())
 			}
 		}
 	}
 }
 
-// IndexBlocks indexes blocks by height
-// func (c *BtcClient) IndexBlocks(ctx context.Context, height int64) error {
-// 	// Get full block from BTC node
-// 	block, err := c.GetBlock(ctx, height)
-// 	if err != nil {
-// 		return fmt.Errorf("failed to get block for height %d: %w", height, err)
-// 	}
-
-// 	// Parse each transaction for VaultTransaction
-// 	vaultTxs := []*chains.VaultTransaction{}
-// 	for i, tx := range block.Transactions {
-// 		// Note: block hash is not available from block header here, so we use block.BlockHash().String()
-// 		blockHash := block.BlockHash().String()
-// 		vaultTx, err := c.ParseVaultTransaction(tx, height, blockHash, i)
-// 		if err != nil {
-// 			log.Warn().Err(err).Int("txIndex", i).Msg("Failed to parse transaction")
-// 			continue
-// 		}
-// 		if vaultTx != nil {
-// 			vaultTxs = append(vaultTxs, vaultTx)
-// 			// Save vault transaction to database
-// 			err = c.dbAdapter.CreateVaultTransaction(vaultTx)
-// 			if err != nil {
-// 				log.Warn().Err(err).Msg("Failed to save vault transaction")
-// 			}
-// 		}
-// 	}
-
-// 	log.Info().Int64("height", height).Int("vaultTxs", len(vaultTxs)).Msg("Indexed block (transactions only)")
-// 	return nil
-// }
+// fetchBlockHashes processes a single chunk of block heights using a worker pool
+func (c *BtcClient) fetchBlockHashes(ctx context.Context, blockHeightChan <-chan int64, blockHashesChan chan<- BockHashWithHeight) error {
+	// Determine number of workers (use config or default)
+	numWorkers := 10 // Default number of workers
+	if c.config.FetchThread > 0 {
+		numWorkers = c.config.FetchThread
+	} else if c.config.BatchSize > 0 && c.config.BatchSize < 50 {
+		numWorkers = c.config.BatchSize
+	}
+	log.Info().Int("numWorkers", numWorkers).Msg("[BtcClient] Fetching block hashes")
+	for i := 0; i < numWorkers; i++ {
+		go func(workerID int) {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case height := <-blockHeightChan:
+					// Fetch block hash
+					blockHash, err := c.rpcClient.GetBlockHash(height)
+					if err != nil {
+						log.Warn().Err(err).Int64("height", height).Int("workerID", workerID).Msg("[BtcClient] Failed to get BTC block hash")
+						continue
+					} else {
+						log.Info().Int64("height", height).Int("workerID", workerID).Msg("[BtcClient] Fetched block hash")
+						blockHashesChan <- BockHashWithHeight{blockHash: blockHash, height: height}
+					}
+				}
+			}
+		}(i)
+	}
+	return nil
+}
