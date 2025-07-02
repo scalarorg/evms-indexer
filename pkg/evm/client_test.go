@@ -21,7 +21,6 @@ import (
 	chains "github.com/scalarorg/data-models/chains"
 	"github.com/scalarorg/evms-indexer/config"
 	"github.com/scalarorg/evms-indexer/pkg/evm"
-	"github.com/scalarorg/evms-indexer/pkg/evm/abi"
 	evmAbi "github.com/scalarorg/evms-indexer/pkg/evm/abi"
 	contracts "github.com/scalarorg/evms-indexer/pkg/evm/contracts/generated"
 	"github.com/stretchr/testify/require"
@@ -288,66 +287,6 @@ func TestEvmSubscribe(t *testing.T) {
 
 	// Keep the program running
 	select {}
-}
-func TestRecoverEventTokenSent(t *testing.T) {
-	bnbClient, err := evm.NewEvmClient(configPath, bnbConfig)
-	require.NoError(t, err)
-	//Get current block number
-	blockNumber, err := bnbClient.Client.BlockNumber(context.Background())
-	require.NoError(t, err)
-	lastCheckpoint := evm.SimpleCheckpoint{
-		BlockNumber: blockNumber - 10000,
-		TxHash:      "",
-		LogIndex:    0,
-	}
-	missingEvents, err := evm.GetMissingEventsSingle[*contracts.IScalarGatewayTokenSent](bnbClient, abi.EVENT_EVM_TOKEN_SENT,
-		&lastCheckpoint, func(log types.Log) *contracts.IScalarGatewayTokenSent {
-			return &contracts.IScalarGatewayTokenSent{
-				Raw: log,
-			}
-		})
-	require.NoError(t, err)
-	fmt.Printf("missingEvents %v\n", missingEvents)
-}
-func TestRecoverEventContractCallWithToken(t *testing.T) {
-	bnbClient, err := evm.NewEvmClient(configPath, bnbConfig)
-	require.NoError(t, err)
-	//Get current block number
-	blockNumber, err := bnbClient.Client.BlockNumber(context.Background())
-	fmt.Printf("blockNumber %v\n", blockNumber)
-	require.NoError(t, err)
-	lastCheckpoint := evm.SimpleCheckpoint{
-		BlockNumber: bnbConfig.StartBlock,
-		TxHash:      "",
-		LogIndex:    0,
-	}
-	missingEvents, err := evm.GetMissingEventsSingle[*contracts.IScalarGatewayContractCallWithToken](bnbClient, abi.EVENT_EVM_CONTRACT_CALL_WITH_TOKEN,
-		&lastCheckpoint, func(log types.Log) *contracts.IScalarGatewayContractCallWithToken {
-			return &contracts.IScalarGatewayContractCallWithToken{
-				Raw: log,
-			}
-		})
-	require.NoError(t, err)
-	fmt.Printf("%d missing events found\n", len(missingEvents))
-
-	txHash := "0xc7d4fac102169c129a4f04ccd4e3fa17fcd962f137e4928fb2462c52da039899"
-	tx, isPending, err := bnbClient.Client.TransactionByHash(context.Background(), common.HexToHash(txHash))
-	fmt.Printf("tx %v\n", tx)
-	fmt.Printf("isPending %v\n", isPending)
-	fmt.Printf("err %v\n", err)
-	txHash = "1c9623e21b55e9c4767a12b27f9f68578c167284651efb2b87a51ce438e9fa53"
-	tx, isPending, err = bnbClient.Client.TransactionByHash(context.Background(), common.HexToHash(txHash))
-	require.NoError(t, err)
-	fmt.Printf("tx %v\n", tx)
-	fmt.Printf("isPending %v\n", isPending)
-	fmt.Printf("err %v\n", err)
-
-	log.Info().Str("txHash", txHash).Any("tx", tx).Msgf("ContractCallWithToken")
-	for _, event := range missingEvents {
-		receipt, err := bnbClient.Client.TransactionReceipt(context.Background(), common.HexToHash(event.Hash))
-		require.NoError(t, err)
-		log.Info().Str("txHash", event.Hash).Any("receipt", receipt).Msgf("ContractCallWithToken")
-	}
 }
 
 func TestEvmClientWatchTokenSent(t *testing.T) {
