@@ -1,0 +1,26 @@
+[
+    {
+        "enable": false,
+        "btc_host": "localhost",
+        "btc_port": 48332,
+        "btc_user": "scalar",
+        "btc_password": "scalartestnet4",
+        "btc_network": "testnet",
+        "btc_ssl": false,
+        "port": 48332,
+        "vault_tag": "SCALAR",
+        "vault_version": 3,
+        "database_url": "postgres://vault_indexer:vault_indexer@localhost:5432/vault-indexer-db?sslmode=disable",
+        "dial_timeout": "30s",
+        "method_timeout": "60s",
+        "ping_interval": "30s",
+        "max_reconnect_attempts": 120,
+        "reconnect_delay": "5s",
+        "enable_auto_reconnect": true,
+        "start_height": 82333,
+        "end_height": 83333,
+        "batch_size": 64,
+        "confirmations": 1,
+        "source_chain": "bitcoin|4"
+    }
+]

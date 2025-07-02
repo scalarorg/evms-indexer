@@ -1,37 +1,37 @@
 volumes:
-  evms-indexer-db:
-    name: evms-indexer-db
+  vault-indexer-db:
+    name: vault-indexer-db
 services:
-  evms-indexer-db:
-    container_name: evms-indexer-db
-    hostname: evms-indexer-db
+  indexer-db:
+    container_name: vault-indexer-db
+    hostname: vault-indexer-db
     image: postgres:14.9-alpine3.18
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-vault_indexer}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vault_indexer}
+      POSTGRES_DB: ${POSTGRES_DB:-vault-indexer-db}
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER}" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vault_indexer}" ]
       interval: 10s
       timeout: 5s
       retries: 5
     ports:
-      - "${POSTGRES_PORT}:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     restart: always
     volumes:
-      - evms-indexer-db:/var/lib/postgresql/data
+      - vault-indexer-db:/var/lib/postgresql/data
     logging:
       driver: "json-file"
       options:
         max-size: "128m"
         max-file: "5"
 
-  evms-indexer:
-    image: scalarorg/evms-indexer:latest
-    container_name: evms-indexer
-    hostname: evms-indexer
+  vault-indexer:
+    image: scalarorg/vault-indexer:latest
+    container_name: vault-indexer
+    hostname: vault-indexer
     depends_on:
-      evms-indexer-db:
+      indexer-db:
         condition: service_healthy
    
     volumes:

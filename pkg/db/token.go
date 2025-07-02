@@ -8,6 +8,7 @@ import (
 	"github.com/scalarorg/data-models/chains"
 	"github.com/scalarorg/data-models/scalarnet"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // find relay datas by token sent attributes
@@ -70,26 +71,27 @@ func (db *DatabaseAdapter) SaveTokenSentsAndRemoveDupplicates(tokenSents []*chai
 }
 
 func (db *DatabaseAdapter) SaveTokenSents(tokenSents []*chains.TokenSent) error {
-	result := db.PostgresClient.Save(tokenSents)
+	result := db.PostgresClient.Clauses(
+		clause.OnConflict{
+			Columns:   []clause.Column{{Name: "event_id"}},
+			DoNothing: true,
+		},
+	).Create(tokenSents)
 	if result.Error != nil {
 		return result.Error
 	}
 	return nil
 }
 
-func (db *DatabaseAdapter) SaveTokenSent(tokenSent chains.TokenSent, lastCheckpoint *scalarnet.EventCheckPoint) error {
-	err := db.PostgresClient.Transaction(func(tx *gorm.DB) error {
-		result := tx.Save(&tokenSent)
-		if result.Error != nil {
-			return result.Error
-		}
-		if lastCheckpoint != nil {
-			UpdateLastEventCheckPoint(tx, lastCheckpoint)
-		}
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create evm token send: %w", err)
+func (db *DatabaseAdapter) SaveTokenSent(tokenSent *chains.TokenSent) error {
+	result := db.PostgresClient.Clauses(
+		clause.OnConflict{
+			Columns:   []clause.Column{{Name: "event_id"}},
+			DoNothing: true,
+		},
+	).Create(tokenSent)
+	if result.Error != nil {
+		return fmt.Errorf("failed to create evm token send: %w", result.Error)
 	}
 	return nil
 }
@@ -117,6 +119,76 @@ func (db *DatabaseAdapter) SaveTokenDeployed(tokenDeployed *chains.TokenDeployed
 	result := db.PostgresClient.Save(tokenDeployed)
 	if result.Error != nil {
 		return result.Error
+	}
+	return nil
+}
+
+// BatchSaveTokenSents saves multiple token sent records in a single transaction
+func (db *DatabaseAdapter) BatchSaveTokenSents(tokenSents []*chains.TokenSent) error {
+	if len(tokenSents) == 0 {
+		return nil
+	}
+
+	result := db.PostgresClient.Create(&tokenSents)
+	if result.Error != nil {
+		return fmt.Errorf("failed to batch save token sents: %w", result.Error)
+	}
+	return nil
+}
+
+// BatchSaveTokenDeployed saves multiple token deployed records in a single transaction
+func (db *DatabaseAdapter) BatchSaveTokenDeployed(tokenDeployed []*chains.TokenDeployed) error {
+	if len(tokenDeployed) == 0 {
+		return nil
+	}
+
+	result := db.PostgresClient.Create(&tokenDeployed)
+	if result.Error != nil {
+		return fmt.Errorf("failed to batch save token deployed: %w", result.Error)
+	}
+	return nil
+}
+
+// BatchSaveCommandExecuted saves multiple command executed records in a single transaction
+func (db *DatabaseAdapter) BatchSaveCommandExecuted(commandExecuted []*chains.CommandExecuted) error {
+	if len(commandExecuted) == 0 {
+		return nil
+	}
+
+	result := db.PostgresClient.Clauses(
+		clause.OnConflict{
+			Columns:   []clause.Column{{Name: "command_id"}},
+			DoNothing: true,
+		},
+	).Create(&commandExecuted)
+	if result.Error != nil {
+		return fmt.Errorf("failed to batch save command executed: %w", result.Error)
+	}
+	return nil
+}
+
+// BatchSaveSwitchedPhase saves multiple switched phase records in a single transaction
+func (db *DatabaseAdapter) BatchSaveSwitchedPhase(switchedPhase []chains.SwitchedPhase) error {
+	if len(switchedPhase) == 0 {
+		return nil
+	}
+
+	result := db.PostgresClient.Create(&switchedPhase)
+	if result.Error != nil {
+		return fmt.Errorf("failed to batch save switched phase: %w", result.Error)
+	}
+	return nil
+}
+
+// BatchSaveEvmRedeemTx saves multiple EVM redeem transaction records in a single transaction
+func (db *DatabaseAdapter) BatchSaveEvmRedeemTx(evmRedeemTx []chains.EvmRedeemTx) error {
+	if len(evmRedeemTx) == 0 {
+		return nil
+	}
+
+	result := db.PostgresClient.Create(&evmRedeemTx)
+	if result.Error != nil {
+		return fmt.Errorf("failed to batch save EVM redeem tx: %w", result.Error)
 	}
 	return nil
 }

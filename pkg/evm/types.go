@@ -15,18 +15,20 @@ const (
 type Byte32 [32]uint8
 type Bytes []byte
 type EvmNetworkConfig struct {
-	ChainID       uint64        `mapstructure:"chain_id"`
-	ID            string        `mapstructure:"id"`
-	Name          string        `mapstructure:"name"`
-	RPCUrl        string        `mapstructure:"rpc_url"`
-	Gateway       string        `mapstructure:"gateway"`
-	Finality      int           `mapstructure:"finality"`
-	StartBlock    uint64        `mapstructure:"start_block"`
-	BlockTime     time.Duration `mapstructure:"blockTime"` //Timeout im ms for pending txs
-	MaxRetry      int           `mapstructure:"max_retry"`
-	RecoverRange  uint64        `mapstructure:"recover_range"`  //Max block range to recover events in single query
-	RecoverThread int           `mapstructure:"recover_thread"` //Number of threads to recover events
-	RetryDelay    time.Duration `mapstructure:"retry_delay"`
+	ChainID       uint64        `mapstructure:"chain_id" json:"chainId"`
+	Enable        bool          `mapstructure:"enable" json:"enable"`
+	ID            string        `mapstructure:"id" json:"id"`
+	Name          string        `mapstructure:"name" json:"name"`
+	RPCUrl        string        `mapstructure:"rpc_url" json:"rpcUrl"`
+	Gateway       string        `mapstructure:"gateway" json:"gateway"`
+	Finality      int           `mapstructure:"finality" json:"finality"`
+	StartBlock    uint64        `mapstructure:"start_block" json:"startBlock"`
+	BlockTime     time.Duration `mapstructure:"blockTime" json:"blockTime"` //Timeout im ms for pending txs
+	MaxRetry      int           `mapstructure:"max_retry" json:"maxRetry"`
+	RecoverRange  uint64        `mapstructure:"recover_range" json:"recoverRange"`   //Max block range to recover events in single query
+	RecoverThread int           `mapstructure:"recover_thread" json:"recoverThread"` //Number of threads to recover events
+	RetryDelay    time.Duration `mapstructure:"retry_delay" json:"retryDelay"`
+	DatabaseURL   string        `mapstructure:"database_url" json:"database_url"` //Separate database URL for this EVM chain
 }
 
 func (c *EvmNetworkConfig) GetChainId() uint64 {

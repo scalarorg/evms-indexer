@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	"github.com/scalarorg/data-models/chains"
-	"github.com/scalarorg/data-models/scalarnet"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 var dbAdapter *DatabaseAdapter
 
+// DatabaseAdapter implements btc.DBAdapter interface for reorg handling
 type DatabaseAdapter struct {
 	PostgresClient *gorm.DB
 }
@@ -62,48 +62,19 @@ func SetupDatabase(dsn string) (*gorm.DB, error) {
 func RunMigrations(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&chains.BlockHeader{},
+		&chains.BtcBlockHeader{},
+		&chains.VaultTransaction{},
 		&chains.TokenSent{},
 		&chains.MintCommand{},
 		&chains.CommandExecuted{},
 		&chains.ContractCall{},
+		&chains.ContractCallApproved{},
 		&chains.ContractCallWithToken{},
 		&chains.TokenDeployed{},
 		&chains.EvmRedeemTx{},
 		&chains.SwitchedPhase{},
-		&scalarnet.Command{},
-		&scalarnet.CallContractWithToken{},
-		&scalarnet.TokenSentApproved{},
-		&scalarnet.ContractCallApprovedWithMint{},
-		&scalarnet.EventCheckPoint{},
+		// &scalarnet.CallContractWithToken{},
+		// &scalarnet.TokenSentApproved{},
+		// &scalarnet.ContractCallApprovedWithMint{},
 	)
 }
-
-// func InitHyperTables(db *gorm.DB) error {
-// 	// Convert tables with timestamp columns into hyper tables
-// 	tables := []struct {
-// 		name       string
-// 		timeColumn string
-// 	}{
-// 		{"commands", "created_at"},
-// 		{"token_sents", "created_at"},
-// 		// Add other tables that need to be converted to hyper tables
-// 	}
-
-// 	for _, table := range tables {
-// 		if err := CreateHyperTable(db, table.name, table.timeColumn); err != nil {
-// 			return fmt.Errorf("failed to create hyper table for %s: %w", table.name, err)
-// 		}
-// 	}
-
-// 	return nil
-// }
-
-// func CreateHyperTable(db *gorm.DB, tableName string, timeColumn string) error {
-// 	sql := fmt.Sprintf(
-// 		"SELECT create_hypertable('%s', by_range('%s'), if_not_exists => TRUE, migrate_data => TRUE);",
-// 		tableName,
-// 		timeColumn,
-// 	)
-
-// 	return db.Exec(sql).Error
-// }

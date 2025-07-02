@@ -26,24 +26,85 @@ lint:
 .PHONY: build
 build: go.sum
 		go build -o ./bin/indexer -mod=readonly ./main.go
+
+# Development commands
+.PHONY: dev
 dev: build
-	export $$(cat .env) && ./bin/indexer
+	set -a; source .env; set +a; ./bin/indexer
+
+# Local development with PostgreSQL
+.PHONY: db-up
+db-up:
+	@echo "--> Starting PostgreSQL with Docker Compose"
+	docker compose -f compose.yml up -d indexer-db
+	@echo "--> Waiting for PostgreSQL to be ready..."
+	@until docker compose -f compose.yml exec -T indexer-db pg_isready -U vault_indexer; do sleep 2; done
+	@echo "--> PostgreSQL is ready!"
+
+.PHONY: db-down
+db-down:
+	@echo "--> Stopping PostgreSQL"
+	docker compose -f compose.yml down --volumes indexer-db
+
+.PHONY: local-run
+local-run:
+	@echo "--> Running evms-indexer locally with go run"
+	set -a; source .env; set +a; go run main.go
+
+.PHONY: local-dev
+local-dev: db-up local-run
+
+.PHONY: local-up
+local-up: local-dev
+
+.PHONY: local-clean
+local-clean: db-down
+	@echo "--> Cleaning up local development environment"
+
+# Development utilities
+.PHONY: deps
+deps:
+	@echo "--> Installing dependencies"
+	go mod download
+	go mod tidy
+
+.PHONY: test
+test:
+	@echo "--> Running tests"
+	go test -v ./...
+
+.PHONY: test-coverage
+test-coverage:
+	@echo "--> Running tests with coverage"
+	go test -v -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out -o coverage.html
+	@echo "--> Coverage report generated: coverage.html"
+
+.PHONY: clean
+clean:
+	@echo "--> Cleaning build artifacts"
+	rm -rf ./bin/
+	rm -f coverage.out coverage.html
+
+.PHONY: logs
+logs:
+	@echo "--> Showing PostgreSQL logs"
+	docker compose -f compose.yml logs -f indexer-db
+
+.PHONY: db-shell
+db-shell:
+	@echo "--> Opening PostgreSQL shell"
+	docker compose -f compose.yml exec indexer-db psql -U vault_indexer -d vault-indexer-db
 
 # Build a release image
 .PHONY: docker-image
 docker-image:
 	@DOCKER_BUILDKIT=1 docker build \
 		--build-arg ARCH="${ARCH}" \
-		-t scalarorg/evms-indexer .		
+		-t scalarorg/vault-indexer .		
 
-docker-up:
-	docker compose up -d
-
-docker-down:
-	docker compose down
-
-compose:
-	docker compose -f dev.compose.yml up -d
+compose-up:
+	docker compose -f compose.yml up -d
 compose-down:
-	docker compose -f dev.compose.yml down --volumes
+	docker compose -f compose.yml down --volumes
 

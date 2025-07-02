@@ -1,4 +1,4 @@
-package evm
+package abi
 
 import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -16,8 +16,8 @@ var (
 	uint32ArrayType, _ = abi.NewType("uint32[]", "uint32[]", nil)
 	uint64ArrayType, _ = abi.NewType("uint64[]", "uint64[]", nil)
 
-	contractCallWithTokenCustodianOnly = abi.Arguments{{Type: uint64Type}, {Type: bytesType}, {Type: stringArrayType}, {Type: uint32ArrayType}, {Type: uint64ArrayType}, {Type: bytes32Type}}
-	contractCallWithTokenUPC           = abi.Arguments{{Type: bytesType}}
+	ContractCallWithTokenCustodianOnly = abi.Arguments{{Type: uint64Type}, {Type: bytesType}, {Type: stringArrayType}, {Type: uint32ArrayType}, {Type: uint64ArrayType}, {Type: bytes32Type}}
+	ContractCallWithTokenUPC           = abi.Arguments{{Type: bytesType}}
 	scalarGatewayAbi                   *abi.ABI
 	mapEvents                          = map[string]*abi.Event{}
 )
@@ -30,7 +30,7 @@ func init() {
 	}
 }
 
-func getScalarGatewayAbi() (*abi.ABI, error) {
+func GetScalarGatewayAbi() (*abi.ABI, error) {
 	if scalarGatewayAbi == nil {
 		var err error
 		scalarGatewayAbi, err = contracts.IScalarGatewayMetaData.GetAbi()

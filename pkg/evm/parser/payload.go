@@ -1,4 +1,4 @@
-package evm
+package parser
 
 import (
 	"bytes"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/scalarorg/bitcoin-vault/go-utils/btc"
+	"github.com/scalarorg/evms-indexer/pkg/evm/abi"
 )
 
 type ContractCallWithTokenPayloadType uint8
@@ -58,7 +59,7 @@ func (p *ContractCallWithTokenPayload) Parse(payload []byte) error {
 }
 
 func (p *CustodianOnly) Parse(payload []byte) error {
-	decoded, err := contractCallWithTokenCustodianOnly.Unpack(payload)
+	decoded, err := abi.ContractCallWithTokenCustodianOnly.Unpack(payload)
 	if err != nil {
 		return err
 	}
@@ -79,7 +80,7 @@ func (p *CustodianOnly) Parse(payload []byte) error {
 }
 
 func (p *UPC) Parse(payload []byte) error {
-	decoded, err := contractCallWithTokenUPC.Unpack(payload)
+	decoded, err := abi.ContractCallWithTokenUPC.Unpack(payload)
 	if err != nil {
 		return err
 	}

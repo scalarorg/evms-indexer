@@ -1,13 +1,11 @@
 package db
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
 	"github.com/rs/zerolog/log"
 	"github.com/scalarorg/data-models/chains"
-	"github.com/scalarorg/data-models/scalarnet"
 	"gorm.io/gorm"
 )
 
@@ -104,35 +102,18 @@ func (db *DatabaseAdapter) UpdateCallContractWithTokenExecuteHash(eventId string
 	return nil
 }
 
-func (db *DatabaseAdapter) CreateContractCall(contractCall chains.ContractCall, lastCheckpoint *scalarnet.EventCheckPoint) error {
-	err := db.PostgresClient.Transaction(func(tx *gorm.DB) error {
-		result := tx.Save(&contractCall)
-		if result.Error != nil {
-			return result.Error
-		}
-		if lastCheckpoint != nil {
-			UpdateLastEventCheckPoint(tx, lastCheckpoint)
-		}
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create evm token send: %w", err)
+func (db *DatabaseAdapter) CreateContractCall(contractCall chains.ContractCall) error {
+	result := db.PostgresClient.Save(&contractCall)
+	if result.Error != nil {
+		return fmt.Errorf("failed to create evm contract call: %w", result.Error)
 	}
 	return nil
 }
-func (db *DatabaseAdapter) CreateContractCallWithToken(contractCallWithToken *chains.ContractCallWithToken, lastCheckpoint *scalarnet.EventCheckPoint) error {
-	err := db.PostgresClient.Transaction(func(tx *gorm.DB) error {
-		result := tx.Save(contractCallWithToken)
-		if result.Error != nil {
-			return result.Error
-		}
-		if lastCheckpoint != nil {
-			UpdateLastEventCheckPoint(tx, lastCheckpoint)
-		}
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create evm token send: %w", err)
+
+func (db *DatabaseAdapter) CreateContractCallWithToken(contractCallWithToken *chains.ContractCallWithToken) error {
+	result := db.PostgresClient.Save(contractCallWithToken)
+	if result.Error != nil {
+		return fmt.Errorf("failed to create evm contract call with token: %w", result.Error)
 	}
 	return nil
 }
@@ -188,13 +169,39 @@ func (db *DatabaseAdapter) UpdateBatchContractCallStatus(data []ContractCallExec
 	})
 }
 
-func (db *DatabaseAdapter) UpdateContractCallWithMintsStatus(ctx context.Context, cmdIds []string, status chains.ContractCallStatus) error {
-	log.Debug().Any("cmdIds", cmdIds).Msg("[DatabaseAdapter] UpdateContractCallWithMintsStatus")
-	err := db.PostgresClient.Transaction(func(tx *gorm.DB) error {
-		eventIds := tx.Model(&scalarnet.ContractCallApprovedWithMint{}).Select("event_id").Where("command_id IN (?)", cmdIds)
-		//only update the token sent that is not success
-		result := tx.Model(&chains.ContractCallWithToken{}).Where("event_id IN (?) and status != ?", eventIds, chains.ContractCallStatusSuccess).Update("status", status)
-		return result.Error
-	})
-	return err
+// func (db *DatabaseAdapter) UpdateContractCallWithMintsStatus(ctx context.Context, cmdIds []string, status chains.ContractCallStatus) error {
+// 	log.Debug().Any("cmdIds", cmdIds).Msg("[DatabaseAdapter] UpdateContractCallWithMintsStatus")
+// 	err := db.PostgresClient.Transaction(func(tx *gorm.DB) error {
+// 		eventIds := tx.Model(&scalarnet.ContractCallApprovedWithMint{}).Select("event_id").Where("command_id IN (?)", cmdIds)
+// 		//only update the token sent that is not success
+// 		result := tx.Model(&chains.ContractCallWithToken{}).Where("event_id IN (?) and status != ?", eventIds, chains.ContractCallStatusSuccess).Update("status", status)
+// 		return result.Error
+// 	})
+// 	return err
+// }
+
+// BatchCreateContractCalls saves multiple contract calls in a single transaction
+func (db *DatabaseAdapter) BatchCreateContractCalls(contractCalls []chains.ContractCall) error {
+	if len(contractCalls) == 0 {
+		return nil
+	}
+
+	result := db.PostgresClient.Create(&contractCalls)
+	if result.Error != nil {
+		return fmt.Errorf("failed to batch create contract calls: %w", result.Error)
+	}
+	return nil
+}
+
+// BatchCreateContractCallsWithToken saves multiple contract calls with token in a single transaction
+func (db *DatabaseAdapter) BatchCreateContractCallsWithToken(contractCallsWithToken []*chains.ContractCallWithToken) error {
+	if len(contractCallsWithToken) == 0 {
+		return nil
+	}
+
+	result := db.PostgresClient.Create(&contractCallsWithToken)
+	if result.Error != nil {
+		return fmt.Errorf("failed to batch create contract calls with token: %w", result.Error)
+	}
+	return nil
 }
