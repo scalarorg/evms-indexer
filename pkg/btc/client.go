@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/btcsuite/btcd/rpcclient"
@@ -29,6 +30,7 @@ type BtcClient struct {
 	baseReconnectDelay time.Duration
 	maxReconnectDelay  time.Duration
 	reconnectTicker    *time.Ticker
+	lastBlockHeight    atomic.Uint64
 }
 
 // NewElectrumIndexer creates a new electrum indexer
@@ -59,7 +61,7 @@ func NewBtcClient(config *BtcConfig) (*BtcClient, error) {
 	// Create database adapter for electrum data
 	dbAdapter, err := db.NewDatabaseAdapter(config.DatabaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to electrum database: %w", err)
+		return nil, fmt.Errorf("failed to connect to database: %s,%w", config.DatabaseURL, err)
 	}
 
 	// Configure connection
@@ -120,4 +122,12 @@ func NewBtcClients(globalConfig *config.Config) ([]*BtcClient, error) {
 	}
 
 	return indexers, nil
+}
+
+func (c *BtcClient) GetLastBlockHeight() uint64 {
+	return c.lastBlockHeight.Load()
+}
+
+func (c *BtcClient) SetLastBlockHeight(height uint64) {
+	c.lastBlockHeight.Store(height)
 }

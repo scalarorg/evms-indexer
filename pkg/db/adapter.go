@@ -60,7 +60,7 @@ func SetupDatabase(dsn string) (*gorm.DB, error) {
 }
 
 func RunMigrations(db *gorm.DB) error {
-	return db.AutoMigrate(
+	err := db.AutoMigrate(
 		&chains.BlockHeader{},
 		&chains.BtcBlockHeader{},
 		&chains.VaultTransaction{},
@@ -77,4 +77,9 @@ func RunMigrations(db *gorm.DB) error {
 		// &scalarnet.TokenSentApproved{},
 		// &scalarnet.ContractCallApprovedWithMint{},
 	)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

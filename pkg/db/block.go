@@ -35,8 +35,8 @@ func (db *DatabaseAdapter) CreateBlockHeader(blockHeader *chains.BlockHeader) er
 
 func (db *DatabaseAdapter) CreateBtcBlockHeader(blockHeader *chains.BtcBlockHeader) error {
 	return db.PostgresClient.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "hash"}, {Name: "height"}},
-		UpdateAll: true,
+		Columns:   []clause.Column{{Name: "height"}},
+		DoNothing: true,
 	}).Create(blockHeader).Error
 }
 

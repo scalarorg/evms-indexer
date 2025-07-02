@@ -78,6 +78,11 @@ func (c *BtcClient) orchestrateFetching(ctx context.Context,
 				continue
 			}
 			blockHeaderVerbose, err := c.rpcClient.GetBlockHeaderVerbose(blockHash)
+			if err != nil {
+				log.Warn().Err(err).Msg("Failed to get BTC block header verbose")
+				continue
+			}
+			c.SetLastBlockHeight(uint64(blockHeaderVerbose.Height))
 			endHeight := int64(blockHeaderVerbose.Height)
 			if endHeight > c.config.EndHeight && c.config.EndHeight > 0 {
 				endHeight = c.config.EndHeight
@@ -218,25 +223,29 @@ func (c *BtcClient) indexBlock(ctx context.Context, blockChan <-chan *btcjson.Ge
 				return ctx.Err()
 			}
 
-			// Check for reorg before processing the block
 			blockHeader, err := extractBlockHeader(block)
 			if err != nil {
 				log.Warn().Err(err).Msg("Failed to extract block header")
 				continue
 			}
-
+			// Check for reorg before processing the block
 			// Create BlockHeaderLite for reorg detection
-			blockHash := blockHeader.BlockHash()
-			newBlockHeader := &db.BlockHeaderLite{
-				Height:   block.Height,
-				Hash:     &blockHash,
-				PrevHash: &blockHeader.PrevBlock,
-			}
+			currHeight := c.GetLastBlockHeight()
+			if block.Height > int64(currHeight)-FINAL_CONFIRMATIONS {
+				log.Warn().Int64("BlockHeight", block.Height).
+					Uint64("currHeight", currHeight).
+					Msg("Checking for reorg")
+				blockHash := blockHeader.BlockHash()
+				newBlockHeader := &db.BlockHeaderLite{
+					Height:   block.Height,
+					Hash:     &blockHash,
+					PrevHash: &blockHeader.PrevBlock,
+				}
 
-			// Check for reorg and handle if necessary
-			if err := c.reorgHandler.DetectAndHandleReorg(ctx, newBlockHeader); err != nil {
-				log.Warn().Err(err).Int64("height", block.Height).Msg("Failed to handle reorg")
-				continue
+				// Check for reorg and handle if necessary
+				if err := c.reorgHandler.DetectAndHandleReorg(ctx, newBlockHeader); err != nil {
+					log.Warn().Err(err).Int64("height", block.Height).Msg("Error handling reorg. Continuing...")
+				}
 			}
 
 			// Store block header

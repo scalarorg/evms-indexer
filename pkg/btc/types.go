@@ -21,6 +21,10 @@ const (
 	SCRIPT_PUBKEY_SIZE       = 32
 )
 
+const (
+	FINAL_CONFIRMATIONS = 12 //Number of confirmations for finalization, block with this number of confirmations is considered final without reorg check
+)
+
 // VaultTransactionType represents the type of vault transaction
 type VaultTransactionType uint8
 
