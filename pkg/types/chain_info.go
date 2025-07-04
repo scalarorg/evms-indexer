@@ -132,8 +132,10 @@ func NewChainInfoFromBytes(bytes []byte) *ChainInfo {
 		return nil
 	}
 	chainType := ChainType(bytes[0])
-	bytes[0] = 0
-	chainID := binary.BigEndian.Uint64(bytes)
+	chainIDBytes := make([]byte, ChainInfoBytesSize)
+	copy(chainIDBytes, bytes[:])
+	chainIDBytes[0] = 0
+	chainID := binary.BigEndian.Uint64(chainIDBytes)
 
 	return &ChainInfo{
 		ChainType: chainType,

@@ -274,6 +274,8 @@ github.com/scalarorg/data-models v0.0.0-20250702022017-cdda0c286871 h1:cc2dNHuF1
 github.com/scalarorg/data-models v0.0.0-20250702022017-cdda0c286871/go.mod h1:Z26TBRv9TTDniNxeUj9BRc1HUr/STXEdTh5lheUM5N0=
 github.com/scalarorg/data-models v0.0.0-20250702041820-c4a28d965040 h1:TdeL750NfluYSR6N5Vuy1STkk7FvCaPyjjKFZk8myXk=
 github.com/scalarorg/data-models v0.0.0-20250702041820-c4a28d965040/go.mod h1:Z26TBRv9TTDniNxeUj9BRc1HUr/STXEdTh5lheUM5N0=
+github.com/scalarorg/data-models v0.0.0-20250704084851-75a3219521c1 h1:sJxyPvlfYjyoGdcXTpxJptYZ0Jw2Sb0tZ3TmvEgZ8vM=
+github.com/scalarorg/data-models v0.0.0-20250704084851-75a3219521c1/go.mod h1:Z26TBRv9TTDniNxeUj9BRc1HUr/STXEdTh5lheUM5N0=
 github.com/shirou/gopsutil v3.21.4-0.20210419000835-c7a38de76ee5+incompatible h1:Bn1aCHHRnjv4Bl16T8rcaFjYSrGrIZvpiGO6P3Q4GpU=
 github.com/shirou/gopsutil v3.21.4-0.20210419000835-c7a38de76ee5+incompatible/go.mod h1:5b4v6he4MtMOwMlS0TUMTu2PcXUg8+E1lC7eC3UO/RA=
 github.com/sourcegraph/conc v0.3.0 h1:OQTbbt6P72L20UqAkXXuLOj79LfEanQ+YQFNpLA9ySo=

@@ -111,10 +111,10 @@ func (db *DatabaseAdapter) SaveTokenDeployeds(values []*chains.TokenDeployed) er
 func (db *DatabaseAdapter) SaveSwitchedPhases(values []*chains.SwitchedPhase) error {
 	result := db.PostgresClient.Clauses(
 		clause.OnConflict{
-			Columns:   []clause.Column{{Name: "source_chain"}, {Name: "tx_hash"}},
+			Columns:   []clause.Column{{Name: "source_chain"}, {Name: "tx_hash"}, {Name: "custodian_group_uid"}, {Name: "session_sequence"}},
 			DoNothing: true,
 		},
-	)
+	).Create(values)
 	if result.Error != nil {
 		return result.Error
 	}
