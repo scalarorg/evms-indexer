@@ -109,27 +109,8 @@ func NewEvmClient(configPath string, evmConfig *EvmNetworkConfig) (*EvmClient, e
 		return nil, fmt.Errorf("failed to create gateway contract instance: %w", err)
 	}
 
-	// Find starting block as the max block number across indexed events
-	var startingBlock uint64
-	if dbAdapter != nil {
-		latestBlock, err := dbAdapter.GetLatestBlockFromAllEvents(evmConfig.GetId())
-		if err != nil {
-			log.Warn().Str("chainId", evmConfig.GetId()).
-				Msg("Failed to get latest block from database, using config start block")
-			startingBlock = evmConfig.StartBlock
-		} else if latestBlock > 0 {
-			// Start from the next block after the latest indexed block
-			startingBlock = latestBlock + 1
-		} else {
-			startingBlock = evmConfig.StartBlock
-		}
-	} else {
-		startingBlock = evmConfig.StartBlock
-	}
-
 	log.Info().
 		Str("chainId", evmConfig.GetId()).
-		Uint64("startingBlock", startingBlock).
 		Uint64("configStartBlock", evmConfig.StartBlock).
 		Msg("EVM client starting block determined")
 
@@ -141,7 +122,6 @@ func NewEvmClient(configPath string, evmConfig *EvmNetworkConfig) (*EvmClient, e
 		GatewayAddress: gatewayAddress,
 		dbAdapter:      dbAdapter,
 		TokenAddresses: make(map[string]string),
-		startingBlock:  startingBlock,
 	}
 
 	return evmClient, nil
@@ -189,16 +169,16 @@ func PrepareEvents() (map[string]*abi.Event, []common.Hash, error) {
 
 func (c *EvmClient) Start(ctx context.Context) error {
 	logsChan := make(chan []types.Log, 1024) //For recovery
-	logChan := make(chan types.Log, 1024)    //For subscription
+	//logChan := make(chan types.Log, 1024)    //For subscription
 	blockHeightsChan := make(chan map[uint64]uint8, 1024)
 	eventMap, topics, err := PrepareEvents()
 	if err != nil {
 		return fmt.Errorf("failed to prepare events: %w", err)
 	}
 	// Process recovered logs in dependent go routine
-	go c.ProcessLogsFromRecovery(ctx, eventMap, logsChan, blockHeightsChan)
+	go c.ProcessLogsFromFetcher(ctx, eventMap, logsChan, blockHeightsChan)
 	go c.fetchBlocks(ctx, blockHeightsChan)
-	go c.ProcessLogFromSubscription(ctx, eventMap, logChan, blockHeightsChan)
+	//go c.ProcessLogFromSubscription(ctx, eventMap, logChan, blockHeightsChan)
 	// Main loop, fetch logs from network
 	// Each iteration, fetch log until the latest block number
 	c.LoopFetchLogs(ctx, topics, logsChan)
@@ -210,45 +190,47 @@ func (c *EvmClient) LoopFetchLogs(ctx context.Context, topics []common.Hash, log
 		Addresses: []common.Address{c.GatewayAddress},
 		Topics:    [][]common.Hash{topics}, // Filter by multiple event signatures
 	}
+	fromBlock := uint64(0)
+	var err error
+	if c.dbAdapter != nil {
+		fromBlock, err = c.dbAdapter.GetLatestFetchedBlock(c.EvmConfig.GetId())
+		if err != nil {
+			log.Warn().Err(err).Msg("[EvmClient] [LoopFetchLogs] cannot get latest block number.")
+		}
+	}
+	if fromBlock < c.EvmConfig.StartBlock {
+		fromBlock = c.EvmConfig.StartBlock
+	}
+	recoverRange := uint64(1000000)
+	if c.EvmConfig.RecoverRange > 0 && c.EvmConfig.RecoverRange < 1000000 {
+		recoverRange = c.EvmConfig.RecoverRange
+	}
 	for {
-		fromBlock := uint64(0)
-		var err error
-		if c.dbAdapter != nil {
-			fromBlock, err = c.dbAdapter.GetLatestBlockFromAllEvents(c.EvmConfig.GetId())
-			if err != nil {
-				log.Warn().Err(err).Msg("[EvmClient] [LoopFetchLogs] cannot get latest block number.")
-			}
-		}
-		if fromBlock < c.EvmConfig.StartBlock {
-			fromBlock = c.EvmConfig.StartBlock
-		}
-
+		start := time.Now()
 		currentBlockNumber, err := c.Client.BlockNumber(context.Background())
 		if err != nil {
 			log.Warn().Err(err).Msg("[EvmClient] [LoopFetchLogs] cannot get current block number.")
 		}
-		recoverRange := uint64(1000000)
-		if c.EvmConfig.RecoverRange > 0 && c.EvmConfig.RecoverRange < 1000000 {
-			recoverRange = c.EvmConfig.RecoverRange
-		}
 		// pass recoverRange as reference for adjustment
-		start := time.Now()
-		logCounter, err := c.FetchRangeLogs(ctx, &query, logsChan, fromBlock, currentBlockNumber, &recoverRange)
-		if err != nil {
-			log.Warn().Err(err).Msgf("[Indexer] [Start] cannot recover events for evm client %s", c.EvmConfig.GetId())
-		} else {
-			duration := time.Since(start)
-			log.Info().
-				Str("Chain", c.EvmConfig.ID).
-				Uint64("FromBlock", fromBlock).
-				Uint64("RecoverRange", recoverRange).
-				Uint64("CurrentBlockNumber", currentBlockNumber).
-				Int("TotalLogs", logCounter).
-				Msgf("[EvmClient] Fetch logs finished in %s", duration.String())
-			if duration > FETCH_LOG_INTERVAL {
-				time.Sleep(FETCH_LOG_INTERVAL - duration)
+		if fromBlock <= currentBlockNumber {
+			logCounter, err := c.FetchRangeLogs(ctx, &query, logsChan, fromBlock, currentBlockNumber, &recoverRange)
+			if err != nil {
+				log.Warn().Err(err).Msgf("[Indexer] [Start] cannot recover events for evm client %s", c.EvmConfig.GetId())
+			} else {
+				log.Info().
+					Str("Chain", c.EvmConfig.ID).
+					Uint64("FromBlock", fromBlock).
+					Uint64("RecoverRange", recoverRange).
+					Uint64("CurrentBlockNumber", currentBlockNumber).
+					Int("TotalLogs", logCounter).
+					Msgf("[EvmClient] Fetch logs finished in %s", time.Since(start).String())
 			}
 		}
+		duration := time.Since(start)
+		if duration < FETCH_LOG_INTERVAL {
+			time.Sleep(FETCH_LOG_INTERVAL - duration)
+		}
+		fromBlock = currentBlockNumber + 1
 	}
 }
 

@@ -20,35 +20,35 @@ const (
 	MAX_PARAMS_PER_QUERY = 65535
 )
 
-func (ec *EvmClient) ProcessLogFromSubscription(ctx context.Context, mapEvents map[string]*abi.Event,
-	logChan <-chan types.Log, blockHeightsChan chan<- map[uint64]uint8) error {
-	mapHeights := make(map[uint64]uint8)
-	mapRecords := make(map[string][]any)
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case txLog := <-logChan:
-			mapHeights[txLog.BlockNumber] = 1
-			topic := txLog.Topics[0].String()
-			event, ok := mapEvents[topic]
-			if !ok {
-				log.Error().Str("topic", topic).Any("txLog", txLog).Msg("[EvmClient] [ProcessMissingLogs] event not found")
-				continue
-			}
-			_, model, err := parseEventLog(ec.EvmConfig.GetId(), event, txLog)
-			if err != nil {
-				log.Error().Err(err).Msg("[EvmClient] [ProcessMissingLogs] failed to parse event log")
-				continue
-			}
-			if model != nil {
-				mapRecords[topic] = append(mapRecords[topic], model)
-			}
-		}
-	}
-}
+// func (ec *EvmClient) ProcessLogFromSubscription(ctx context.Context, mapEvents map[string]*abi.Event,
+// 	logChan <-chan types.Log, blockHeightsChan chan<- map[uint64]uint8) error {
+// 	mapHeights := make(map[uint64]uint8)
+// 	mapRecords := make(map[string][]any)
+// 	for {
+// 		select {
+// 		case <-ctx.Done():
+// 			return ctx.Err()
+// 		case txLog := <-logChan:
+// 			mapHeights[txLog.BlockNumber] = 1
+// 			topic := txLog.Topics[0].String()
+// 			event, ok := mapEvents[topic]
+// 			if !ok {
+// 				log.Error().Str("topic", topic).Any("txLog", txLog).Msg("[EvmClient] [ProcessMissingLogs] event not found")
+// 				continue
+// 			}
+// 			_, model, err := parseEventLog(ec.EvmConfig.GetId(), event, txLog)
+// 			if err != nil {
+// 				log.Error().Err(err).Msg("[EvmClient] [ProcessMissingLogs] failed to parse event log")
+// 				continue
+// 			}
+// 			if model != nil {
+// 				mapRecords[topic] = append(mapRecords[topic], model)
+// 			}
+// 		}
+// 	}
+// }
 
-func (ec *EvmClient) ProcessLogsFromRecovery(ctx context.Context, mapEvents map[string]*abi.Event,
+func (ec *EvmClient) ProcessLogsFromFetcher(ctx context.Context, mapEvents map[string]*abi.Event,
 	logsChan <-chan []types.Log,
 	blockHeightsChan chan<- map[uint64]uint8) error {
 	for {
@@ -158,11 +158,11 @@ func (ec *EvmClient) SaveRecords(ctx context.Context, event *abi.Event, records 
 	recordType := reflect.TypeOf(records[0])
 
 	// Log the type information for debugging
-	log.Debug().
-		Str("eventName", event.Name).
-		Str("recordType", recordType.String()).
-		Str("recordKind", recordType.Kind().String()).
-		Msg("[EvmClient] [SaveRecords] Analyzing record type")
+	// log.Debug().
+	// 	Str("eventName", event.Name).
+	// 	Str("recordType", recordType.String()).
+	// 	Str("recordKind", recordType.Kind().String()).
+	// 	Msg("[EvmClient] [SaveRecords] Analyzing record type")
 
 	maxRecordsPerBatch := CalculateOptimalBatchSize(recordType)
 

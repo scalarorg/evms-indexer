@@ -7,6 +7,7 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/scalarorg/data-models/chains"
+	"github.com/scalarorg/evms-indexer/pkg/types"
 	"gorm.io/gorm/clause"
 )
 
@@ -64,61 +65,29 @@ func (db *DatabaseAdapter) GetLatestIndexedHeight(chainId string) (int64, error)
 }
 
 // GetLatestBlockFromAllEvents returns the latest block number from all event tables
-func (db *DatabaseAdapter) GetLatestBlockFromAllEvents(chainId string) (uint64, error) {
-	var maxBlock uint64 = 0
+func (db *DatabaseAdapter) GetLatestFetchedBlock(chainId string) (uint64, error) {
 	if db.PostgresClient == nil {
 		return 0, fmt.Errorf("database client is nil")
 	}
-	// Check token_sents table
-	var tokenSent chains.TokenSent
-	result := db.PostgresClient.Where("source_chain = ?", chainId).Order("block_number DESC").First(&tokenSent)
-	if result.Error == nil && tokenSent.BlockNumber > maxBlock {
-		maxBlock = tokenSent.BlockNumber
-	}
-
-	// Check contract_calls table
-	var contractCall chains.ContractCall
-	result = db.PostgresClient.Where("source_chain = ?", chainId).Order("block_number DESC").First(&contractCall)
-	if result.Error == nil && contractCall.BlockNumber > maxBlock {
-		maxBlock = contractCall.BlockNumber
-	}
-
-	// Check contract_calls_with_token table
-	var contractCallWithToken chains.ContractCallWithToken
-	result = db.PostgresClient.Where("source_chain = ?", chainId).Order("block_number DESC").First(&contractCallWithToken)
-	if result.Error == nil && contractCallWithToken.BlockNumber > maxBlock {
-		maxBlock = contractCallWithToken.BlockNumber
-	}
-
-	// Check command_executed table
-	var commandExecuted chains.CommandExecuted
-	result = db.PostgresClient.Where("source_chain = ?", chainId).Order("block_number DESC").First(&commandExecuted)
-	if result.Error == nil && commandExecuted.BlockNumber > maxBlock {
-		maxBlock = commandExecuted.BlockNumber
-	}
-
-	// Check token_deployed table
-	var tokenDeployed chains.TokenDeployed
-	result = db.PostgresClient.Where("source_chain = ?", chainId).Order("block_number DESC").First(&tokenDeployed)
-	if result.Error == nil && tokenDeployed.BlockNumber > maxBlock {
-		maxBlock = tokenDeployed.BlockNumber
-	}
-
-	// Check evm_redeem_txs table
-	var evmRedeemTx chains.EvmRedeemTx
-	result = db.PostgresClient.Where("source_chain = ?", chainId).Order("block_number DESC").First(&evmRedeemTx)
-	if result.Error == nil && evmRedeemTx.BlockNumber > maxBlock {
-		maxBlock = evmRedeemTx.BlockNumber
-	}
 
 	// Check switched_phases table
-	var switchedPhase chains.SwitchedPhase
-	result = db.PostgresClient.Where("source_chain = ?", chainId).Order("block_number DESC").First(&switchedPhase)
-	if result.Error == nil && switchedPhase.BlockNumber > maxBlock {
-		maxBlock = switchedPhase.BlockNumber
+	var logEventCheckPoint types.LogEventCheckPoint
+	result := db.PostgresClient.Where("chain_id = ?", chainId).Order("last_block DESC").First(&logEventCheckPoint)
+	if result.Error != nil {
+		return 0, result.Error
 	}
+	return logEventCheckPoint.LastBlock, nil
+}
 
-	return maxBlock, nil
+func (db *DatabaseAdapter) UpdateLatestFetchedBlock(chainId string, logEventCheckPoint *types.LogEventCheckPoint) error {
+	if db.PostgresClient == nil {
+		return fmt.Errorf("database client is nil")
+	}
+	db.PostgresClient.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "chain_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"last_block"}),
+	}).Create(logEventCheckPoint)
+	return nil
 }
 
 // GetBlockHashByHeight returns the block hash for a given height

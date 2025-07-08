@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/scalarorg/data-models/chains"
+	"github.com/scalarorg/evms-indexer/pkg/types"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -73,9 +74,7 @@ func RunMigrations(db *gorm.DB) error {
 		&chains.TokenDeployed{},
 		&chains.EvmRedeemTx{},
 		&chains.SwitchedPhase{},
-		// &scalarnet.CallContractWithToken{},
-		// &scalarnet.TokenSentApproved{},
-		// &scalarnet.ContractCallApprovedWithMint{},
+		&types.LogEventCheckPoint{},
 	)
 	if err != nil {
 		return err

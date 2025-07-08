@@ -39,7 +39,10 @@ func (r *ReorgHandler) DetectAndHandleReorg(ctx context.Context, newBlockHeader 
 	}
 
 	// Reorg detected: walk back to find the fork point
-	log.Warn().Int64("fromHeight", newBlockHeader.Height-1).Msg("Reorg detected, rolling back")
+	log.Warn().Int64("tipHeader", newBlockHeader.Height-1).
+		Str("tipHash", tipHeader.Hash.String()).
+		Str("blockPrevHash", newBlockHeader.PrevHash.String()).
+		Msg("Reorg detected, rolling back")
 	forkHeight, err := r.findForkPoint(ctx, tipHeader, newBlockHeader.PrevHash)
 	if err != nil {
 		return err

@@ -56,7 +56,7 @@ func (s *Service) Start(ctx context.Context) error {
 			}
 		}(client)
 	}
-
+	log.Info().Msg("Indexers started")
 	return nil
 }
 

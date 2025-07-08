@@ -23,32 +23,44 @@ func (c *EvmClient) FetchRangeLogs(ctx context.Context, query *ethereum.FilterQu
 	fromBlock uint64, currentBlockNumber uint64, recoverRange *uint64) (int, error) {
 
 	logCounter := 0
-	log.Info().Str("Chain", c.EvmConfig.ID).
-		Uint64("FromBlock", fromBlock).
-		Uint64("RecoverRange", *recoverRange).
-		Uint64("CurrentBlockNumber", currentBlockNumber).
-		Msg("[EvmClient] start fetch logs")
-	for fromBlock < currentBlockNumber {
+	// log.Info().Str("Chain", c.EvmConfig.ID).
+	// 	Uint64("FromBlock", fromBlock).
+	// 	Uint64("RecoverRange", *recoverRange).
+	// 	Uint64("CurrentBlockNumber", currentBlockNumber).
+	// 	Msg("[EvmClient] start fetch logs")
+	for fromBlock <= currentBlockNumber {
 		setQueryRange(query, fromBlock, recoverRange, currentBlockNumber)
 		start := time.Now()
 		logs, err := c.Client.FilterLogs(context.Background(), *query)
 		if err != nil {
-			log.Error().Err(err).Msgf("[EvmClient] [RecoverEvents] failed to filter logs")
+			log.Error().Err(err).Msgf("[EvmClient] [FetchRangeLogs] failed to filter logs")
 			*recoverRange, err = extractRecoverRange(err.Error())
 			if err != nil {
-				log.Error().Err(err).Msgf("[EvmClient] [RecoverEvents] failed to extract recover range from error message: %s", err.Error())
-				return logCounter, err
+				log.Error().Err(err).Msg("[EvmClient] [FetchRangeLogs] failed to extract recover range from error message")
+			} else {
+				log.Info().Str("Chain", c.EvmConfig.ID).Uint64("Adjusted RecoverRange", *recoverRange).
+					Msgf("[EvmClient] [FetchRangeLogs] recover range extracted from error message: %d", recoverRange)
+				setQueryRange(query, fromBlock, recoverRange, currentBlockNumber)
 			}
-			log.Info().Str("Chain", c.EvmConfig.ID).Uint64("Adjusted RecoverRange", *recoverRange).
-				Msgf("[EvmClient] [RecoverEvents] recover range extracted from error message: %d", recoverRange)
-			setQueryRange(query, fromBlock, recoverRange, currentBlockNumber)
-			continue
+			time.Sleep(time.Second)
 		}
 		if len(logs) > 0 {
-			log.Info().Str("Chain", c.EvmConfig.ID).Msgf("[EvmClient] [RecoverEvents] found %d logs, [%d, %d]/%d, time: %s",
+			log.Info().Str("Chain", c.EvmConfig.ID).Msgf("[EvmClient] [RecoverEvents] found %d logs, [%d, %d] /%d, time: %s",
 				len(logs), fromBlock, query.ToBlock, currentBlockNumber, time.Since(start))
 			logsChan <- logs
 			logCounter += len(logs)
+			logEventCheckPoint := &types.LogEventCheckPoint{
+				ChainID:   c.EvmConfig.GetId(),
+				LastBlock: query.ToBlock.Uint64(),
+			}
+			err = c.dbAdapter.UpdateLatestFetchedBlock(c.EvmConfig.GetId(), logEventCheckPoint)
+			if err != nil {
+				log.Error().Err(err).Msgf("[EvmClient] [FetchRangeLogs] failed to update latest fetched block")
+			}
+		}
+		//Sleep until 100ms after start to avoid rate limit
+		if time.Since(start) > time.Millisecond*100 {
+			time.Sleep(time.Millisecond*100 - time.Since(start))
 		}
 		//Set fromBlock to the next block number for next iteration
 		fromBlock = query.ToBlock.Uint64() + 1
@@ -77,7 +89,7 @@ func extractRecoverRange(errMsg string) (uint64, error) {
 		}
 		return value, nil
 	}
-	return 0, fmt.Errorf("no match found")
+	return 0, fmt.Errorf("no block range match")
 }
 
 func (c *EvmClient) fetchBlocks(ctx context.Context, blockHeightsChan <-chan map[uint64]uint8) {
