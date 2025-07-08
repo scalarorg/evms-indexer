@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/common"
 	ethTypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/rs/zerolog/log"
 	chains "github.com/scalarorg/data-models/chains"
@@ -20,50 +19,29 @@ import (
 )
 
 // RecoverAllEvents recovers all events from the latest block in the database
-func (c *EvmClient) RecoverAllEvents(ctx context.Context, topics []common.Hash, logsChan chan<- []ethTypes.Log) error {
-	currentBlockNumber, err := c.Client.BlockNumber(context.Background())
-	if err != nil {
-		return fmt.Errorf("failed to get current block number: %w", err)
-	}
-	recoverRange := uint64(1000000)
-	if c.EvmConfig.RecoverRange > 0 && c.EvmConfig.RecoverRange < 1000000 {
-		recoverRange = c.EvmConfig.RecoverRange
-	}
-	fromBlock := uint64(0)
-	if c.dbAdapter != nil {
-		fromBlock, err = c.dbAdapter.GetLatestBlockFromAllEvents(c.EvmConfig.GetId())
-		if err != nil {
-			return fmt.Errorf("failed to get latest block number: %w", err)
-		}
-	}
-	if fromBlock < c.EvmConfig.StartBlock {
-		fromBlock = c.EvmConfig.StartBlock
-	}
-	// Set up a query for logs
-	query := ethereum.FilterQuery{
-		Addresses: []common.Address{c.GatewayAddress},
-		Topics:    [][]common.Hash{topics}, // Filter by multiple event signatures
-	}
+func (c *EvmClient) FetchRangeLogs(ctx context.Context, query *ethereum.FilterQuery, logsChan chan<- []ethTypes.Log,
+	fromBlock uint64, currentBlockNumber uint64, recoverRange *uint64) (int, error) {
+
 	logCounter := 0
 	log.Info().Str("Chain", c.EvmConfig.ID).
 		Uint64("FromBlock", fromBlock).
-		Uint64("RecoverRange", recoverRange).
+		Uint64("RecoverRange", *recoverRange).
 		Uint64("CurrentBlockNumber", currentBlockNumber).
-		Msg("[EvmClient] [RecoverAllEvents] starting recover all events")
+		Msg("[EvmClient] start fetch logs")
 	for fromBlock < currentBlockNumber {
-		setQueryRange(&query, fromBlock, recoverRange, currentBlockNumber)
+		setQueryRange(query, fromBlock, recoverRange, currentBlockNumber)
 		start := time.Now()
-		logs, err := c.Client.FilterLogs(context.Background(), query)
+		logs, err := c.Client.FilterLogs(context.Background(), *query)
 		if err != nil {
 			log.Error().Err(err).Msgf("[EvmClient] [RecoverEvents] failed to filter logs")
-			recoverRange, err = extractRecoverRange(err.Error())
+			*recoverRange, err = extractRecoverRange(err.Error())
 			if err != nil {
 				log.Error().Err(err).Msgf("[EvmClient] [RecoverEvents] failed to extract recover range from error message: %s", err.Error())
-				return err
+				return logCounter, err
 			}
-			log.Info().Str("Chain", c.EvmConfig.ID).Uint64("Adjusted RecoverRange", recoverRange).
+			log.Info().Str("Chain", c.EvmConfig.ID).Uint64("Adjusted RecoverRange", *recoverRange).
 				Msgf("[EvmClient] [RecoverEvents] recover range extracted from error message: %d", recoverRange)
-			setQueryRange(&query, fromBlock, recoverRange, currentBlockNumber)
+			setQueryRange(query, fromBlock, recoverRange, currentBlockNumber)
 			continue
 		}
 		if len(logs) > 0 {
@@ -75,16 +53,11 @@ func (c *EvmClient) RecoverAllEvents(ctx context.Context, topics []common.Hash, 
 		//Set fromBlock to the next block number for next iteration
 		fromBlock = query.ToBlock.Uint64() + 1
 	}
-	log.Info().
-		Str("Chain", c.EvmConfig.ID).
-		Uint64("CurrentBlockNumber", currentBlockNumber).
-		Int("TotalLogs", logCounter).
-		Msg("[EvmClient] [FinishRecover] recovered all events")
-	return nil
+	return logCounter, nil
 }
 
-func setQueryRange(query *ethereum.FilterQuery, fromBlock uint64, recoverRange uint64, currentBlockNumber uint64) {
-	toBlock := fromBlock + recoverRange - 1
+func setQueryRange(query *ethereum.FilterQuery, fromBlock uint64, recoverRange *uint64, currentBlockNumber uint64) {
+	toBlock := fromBlock + *recoverRange - 1
 	if toBlock > currentBlockNumber {
 		toBlock = currentBlockNumber
 	}

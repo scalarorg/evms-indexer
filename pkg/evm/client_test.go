@@ -81,7 +81,7 @@ func TestMain(m *testing.M) {
 	sepoliaEthClient, _ = createEVMClient("RPC_SEPOLIA")
 	bnbEthClient, _ = createEVMClient("RPC_BNB")
 	sepoliaConfig.RPCUrl = os.Getenv("RPC_SEPOLIA")
-	log.Info().Msgf("Creating evm client with config: %v", sepoliaConfig)
+	log.Info().Msgf("Creating evm client with config: %+v", sepoliaConfig)
 	sepoliaClient, err = evm.NewEvmClient(globalConfig.ConfigPath, sepoliaConfig)
 	if err != nil {
 		log.Error().Msgf("failed to create evm client: %v", err)
@@ -121,6 +121,50 @@ func TestGetBlockHeader(t *testing.T) {
 	t.Logf("blockHeader %++v", blockHeader)
 }
 
+// 2025 July error:
+// client_test.go:132: failed to subscribe to events use watch: notifications not supported
+// client_test.go:137: failed to watch executed: notifications not supported
+func TestSubscribeAllEvents(t *testing.T) {
+	logsChan := make(chan types.Log, 1024)
+	_, topics, err := evm.PrepareEvents()
+	if err != nil {
+		t.Fatalf("failed to prepare events: %v", err)
+	}
+	err = sepoliaClient.SubscribeAllEvents(context.Background(), topics, logsChan)
+	if err != nil {
+		t.Logf("failed to subscribe to events use watch: %v", err)
+		watchOpts := bind.WatchOpts{Start: &sepoliaConfig.StartBlock, Context: context.Background()}
+		sink := make(chan *contracts.IScalarGatewayExecuted)
+		subExecuted, err := sepoliaClient.Gateway.WatchExecuted(&watchOpts, sink, nil)
+		if err != nil {
+			t.Logf("failed to watch executed: %v", err)
+		}
+		if subExecuted != nil {
+			t.Logf("subscribed to executed")
+			go func() {
+				for event := range sink {
+					t.Logf("event %v\n", event)
+				}
+			}()
+			go func() {
+				errChan := subExecuted.Err()
+				if err := <-errChan; err != nil {
+					t.Logf("received error: %v", err)
+				}
+			}()
+		}
+	}
+	// require.NoError(t, err)
+	for {
+		select {
+		case log := <-logsChan:
+			t.Logf("log %v\n", log)
+
+		case <-time.After(10 * time.Second):
+			t.Logf("Timeout waiting for logs")
+		}
+	}
+}
 func TestEvmClientListenContractCallEvent(t *testing.T) {
 	watchOpts := bind.WatchOpts{Start: &sepoliaConfig.StartBlock, Context: context.Background()}
 	sink := make(chan *contracts.IScalarGatewayContractCall)
@@ -220,10 +264,8 @@ func TestRecoverEvent(t *testing.T) {
 		}
 		topics = append(topics, event.ID)
 	}
-	go func() {
-		err = sepoliaClient.RecoverAllEvents(context.Background(), topics, logsChan)
-		require.NoError(t, err)
-	}()
+
+	go sepoliaClient.LoopFetchLogs(context.Background(), topics, logsChan)
 	for {
 		t.Logf("Waiting for logs")
 		select {

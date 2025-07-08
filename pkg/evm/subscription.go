@@ -10,6 +10,9 @@ import (
 )
 
 func (c *EvmClient) SubscribeAllEvents(ctx context.Context, topics []common.Hash, logsChan chan<- types.Log) error {
+	log.Info().Hex("GatewayAddress", c.GatewayAddress.Bytes()).
+		Int("topics length", len(topics)).
+		Msgf("[EvmClient] [SubscribeAllEvents] subscribing to events")
 	query := ethereum.FilterQuery{
 		Addresses: []common.Address{c.GatewayAddress},
 		Topics: [][]common.Hash{
