@@ -66,7 +66,6 @@ func RunMigrations(db *gorm.DB) error {
 		&chains.BtcBlockHeader{},
 		&chains.VaultTransaction{},
 		&chains.TokenSent{},
-		&chains.MintCommand{},
 		&chains.CommandExecuted{},
 		&chains.ContractCall{},
 		&chains.ContractCallApproved{},

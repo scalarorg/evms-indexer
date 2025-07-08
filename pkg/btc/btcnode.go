@@ -93,11 +93,12 @@ func (c *BtcClient) orchestrateFetching(ctx context.Context,
 			if endHeight > c.config.EndHeight && c.config.EndHeight > 0 {
 				endHeight = c.config.EndHeight
 			}
-			log.Info().Int64("startHeight", startHeight).Int64("endHeight", endHeight).Msg("Fetching BTC blocks")
 
 			if startHeight > endHeight {
+				log.Info().Int64("startHeight", startHeight).Int64("endHeight", endHeight).Msg("Waiting for new block.")
 				continue
 			}
+			log.Info().Int64("startHeight", startHeight).Int64("endHeight", endHeight).Msg("Fetching BTC blocks")
 			for height := startHeight; height <= endHeight; height++ {
 				blockHeightChan <- height
 			}
@@ -223,10 +224,14 @@ func (c *BtcClient) indexBlock(ctx context.Context, blockChan <-chan *btcjson.Ge
 				log.Warn().Int64("BlockHeight", block.Height).
 					Uint64("currHeight", currHeight).
 					Msg("Checking for reorg")
-				blockHash := blockHeader.BlockHash()
+				blockHash, err := chainhash.NewHashFromStr(block.Hash)
+				if err != nil {
+					log.Warn().Err(err).Msg("Failed to convert block hash to chainhash")
+					continue
+				}
 				newBlockHeader := &db.BlockHeaderLite{
 					Height:   block.Height,
-					Hash:     &blockHash,
+					Hash:     blockHash,
 					PrevHash: &blockHeader.PrevBlock,
 				}
 

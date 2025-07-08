@@ -59,6 +59,9 @@ func (c *BtcClient) ParseVaultMsgTx(tx *wire.MsgTx, txPosition int, blockHeight 
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse vault return transaction output: %w", err)
 	}
+	if vaultReturnTxOutput.DestChainID <= 0 {
+		return nil, fmt.Errorf("Destination chain %d is not supported", vaultReturnTxOutput.DestChainID)
+	}
 	vaultReturnTxOutput.ScriptPubkey = firstOutput.PkScript
 	// Parse the vault transaction data
 	vaultTx, err := c.parseVaultTransactionData(tx, vaultReturnTxOutput, txPosition, blockHeight, blockHash, blockTime)

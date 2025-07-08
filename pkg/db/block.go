@@ -2,7 +2,6 @@ package db
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -118,9 +117,7 @@ func (db *DatabaseAdapter) GetBlockHeaderByHeight(ctx context.Context, height in
 		return nil, err
 	}
 
-	// Convert byte slice to hex string for chainhash.NewHashFromStr
-	prevHashHex := hex.EncodeToString(header.PrevBlockhash)
-	prevHash, err := chainhash.NewHashFromStr(prevHashHex)
+	prevHash, err := chainhash.NewHashFromStr(header.PrevBlockHash)
 	if err != nil {
 		return nil, err
 	}

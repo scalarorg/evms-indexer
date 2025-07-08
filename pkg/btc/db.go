@@ -19,7 +19,7 @@ func (c *BtcClient) GetLatestIndexedHeight(ctx context.Context) (int64, error) {
 func (c *BtcClient) StoreBlockHeader(ctx context.Context, header *wire.BlockHeader, height int64) error {
 	blockHeader := &chains.BtcBlockHeader{
 		Version:       header.Version,
-		PrevBlockhash: header.PrevBlock.CloneBytes(),
+		PrevBlockHash: header.PrevBlock.String(),
 		MerkleRoot:    header.MerkleRoot.CloneBytes(),
 		Time:          uint32(header.Timestamp.Unix()),
 		CompactTarget: header.Bits,
