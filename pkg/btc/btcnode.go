@@ -59,7 +59,7 @@ func (c *BtcClient) StartBtcIndexer(ctx context.Context) error {
 
 func (c *BtcClient) orchestrateFetching(ctx context.Context,
 	blockHeightChan chan<- int64) error {
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 	lastHeight, err := c.GetLatestIndexedHeight(ctx)
 	if err != nil {
@@ -95,10 +95,10 @@ func (c *BtcClient) orchestrateFetching(ctx context.Context,
 			}
 
 			if startHeight > endHeight {
-				log.Info().Int64("startHeight", startHeight).Int64("endHeight", endHeight).Msg("Waiting for new block.")
+				log.Info().Str("Chain", c.config.SourceChain).Int64("CurrentHeight", endHeight).Msg("Waiting for new blocks.")
 				continue
 			}
-			log.Info().Int64("startHeight", startHeight).Int64("endHeight", endHeight).Msg("Fetching BTC blocks")
+			log.Info().Str("Chain", c.config.SourceChain).Int64("startHeight", startHeight).Int64("endHeight", endHeight).Msg("Fetching BTC blocks")
 			for height := startHeight; height <= endHeight; height++ {
 				blockHeightChan <- height
 			}
@@ -221,7 +221,8 @@ func (c *BtcClient) indexBlock(ctx context.Context, blockChan <-chan *btcjson.Ge
 			// Create BlockHeaderLite for reorg detection
 			currHeight := c.GetLastBlockHeight()
 			if block.Height > int64(currHeight)-FINAL_CONFIRMATIONS {
-				log.Warn().Int64("BlockHeight", block.Height).
+				log.Debug().Int64("BlockHeight", block.Height).
+					Str("BlockHash", block.Hash).
 					Uint64("currHeight", currHeight).
 					Msg("Checking for reorg")
 				blockHash, err := chainhash.NewHashFromStr(block.Hash)

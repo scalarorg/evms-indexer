@@ -17,10 +17,6 @@ import (
 	contracts "github.com/scalarorg/evms-indexer/pkg/evm/contracts/generated"
 )
 
-const (
-	FETCH_LOG_INTERVAL = time.Second * 5
-)
-
 type EvmClient struct {
 	EvmConfig      *EvmNetworkConfig
 	Client         *ethclient.Client
@@ -30,9 +26,6 @@ type EvmClient struct {
 	dbAdapter      *db.DatabaseAdapter
 	subscriptions  ethereum.Subscription
 	TokenAddresses map[string]string //Map token address by symbol
-	//MissingLogs       MissingLogs
-	retryInterval time.Duration
-	startingBlock uint64
 }
 
 // SimpleCheckpoint represents a minimal checkpoint for recovery
@@ -178,7 +171,6 @@ func (c *EvmClient) Start(ctx context.Context) error {
 	// Process recovered logs in dependent go routine
 	go c.ProcessLogsFromFetcher(ctx, eventMap, logsChan, blockHeightsChan)
 	go c.fetchBlocks(ctx, blockHeightsChan)
-	//go c.ProcessLogFromSubscription(ctx, eventMap, logChan, blockHeightsChan)
 	// Main loop, fetch logs from network
 	// Each iteration, fetch log until the latest block number
 	c.LoopFetchLogs(ctx, topics, logsChan)
@@ -190,47 +182,144 @@ func (c *EvmClient) LoopFetchLogs(ctx context.Context, topics []common.Hash, log
 		Addresses: []common.Address{c.GatewayAddress},
 		Topics:    [][]common.Hash{topics}, // Filter by multiple event signatures
 	}
-	fromBlock := uint64(0)
-	var err error
-	if c.dbAdapter != nil {
-		fromBlock, err = c.dbAdapter.GetLatestFetchedBlock(c.EvmConfig.GetId())
-		if err != nil {
-			log.Warn().Err(err).Msg("[EvmClient] [LoopFetchLogs] cannot get latest block number.")
-		}
+	topicHashes := []string{}
+	for _, topic := range topics {
+		topicHashes = append(topicHashes, topic.String())
 	}
-	if fromBlock < c.EvmConfig.StartBlock {
-		fromBlock = c.EvmConfig.StartBlock
+	currentBlockNumber, err := c.Client.BlockNumber(context.Background())
+	if err != nil {
+		log.Warn().Err(err).Msg("[EvmClient] [LoopFetchLogs] cannot get current block number.")
 	}
-	recoverRange := uint64(1000000)
-	if c.EvmConfig.RecoverRange > 0 && c.EvmConfig.RecoverRange < 1000000 {
-		recoverRange = c.EvmConfig.RecoverRange
+	log.Info().
+		Str("Chain", c.EvmConfig.ID).
+		Strs("Topics", topicHashes).
+		Str("GatewayAddress", c.GatewayAddress.String()).
+		Uint64("CurrentBlockNumber", currentBlockNumber).
+		Msg("[EvmClient] [LoopFetchLogs] start fetching logs")
+	// recover logs in dependent go routine
+	go c.recoverLogs(ctx, &query, currentBlockNumber, logsChan)
+	// fetch realtime logs in current routine
+	c.fetchRealtimeLogs(ctx, &query, currentBlockNumber, logsChan)
+}
+
+// Get logs from current block at starting time
+func (c *EvmClient) fetchRealtimeLogs(ctx context.Context, query *ethereum.FilterQuery,
+	startBlock uint64, logsChan chan<- []types.Log) {
+	fromBlock := startBlock
+	fetchRange := uint64(1000)
+	if c.EvmConfig.RecoverRange > 0 && c.EvmConfig.RecoverRange < fetchRange {
+		fetchRange = c.EvmConfig.RecoverRange
 	}
+	currentBlockNumber, err := c.Client.BlockNumber(context.Background())
+	if err != nil {
+		log.Warn().Err(err).Msg("[EvmClient] [fetchRealtimeLogs] cannot get current block number.")
+	}
+	log.Info().
+		Str("Chain", c.EvmConfig.ID).
+		Uint64("FromBlock", fromBlock).
+		Uint64("FetchRange", fetchRange).
+		Uint64("CurrentBlockNumber", currentBlockNumber).
+		Msg("[EvmClient] [fetchRealtimeLogs] start fetching realtime logs")
+	lastExecutionTime := time.Now()
 	for {
-		start := time.Now()
-		currentBlockNumber, err := c.Client.BlockNumber(context.Background())
-		if err != nil {
-			log.Warn().Err(err).Msg("[EvmClient] [LoopFetchLogs] cannot get current block number.")
+		sleepTime := c.calculateSleepTime(lastExecutionTime, fromBlock, currentBlockNumber, fetchRange)
+		if sleepTime > 0 {
+			time.Sleep(sleepTime)
+			currentBlockNumber, err = c.Client.BlockNumber(context.Background())
+			if err != nil {
+				log.Warn().Err(err).Msg("[EvmClient] [fetchRealtimeLogs] cannot get current block number.")
+			}
 		}
-		// pass recoverRange as reference for adjustment
+
 		if fromBlock <= currentBlockNumber {
-			logCounter, err := c.FetchRangeLogs(ctx, &query, logsChan, fromBlock, currentBlockNumber, &recoverRange)
+			lastExecutionTime = time.Now()
+			logCounter, err := c.FetchRangeLogs(ctx, query, logsChan, fromBlock, currentBlockNumber, &fetchRange, false)
 			if err != nil {
 				log.Warn().Err(err).Msgf("[Indexer] [Start] cannot recover events for evm client %s", c.EvmConfig.GetId())
 			} else {
 				log.Info().
 					Str("Chain", c.EvmConfig.ID).
 					Uint64("FromBlock", fromBlock).
-					Uint64("RecoverRange", recoverRange).
+					Uint64("FetchRange", fetchRange).
 					Uint64("CurrentBlockNumber", currentBlockNumber).
 					Int("TotalLogs", logCounter).
-					Msgf("[EvmClient] Fetch logs finished in %s", time.Since(start).String())
+					Msgf("[EvmClient] [fetchRealtimeLogs] fetch logs finished in %s. Waiting for next fetch", time.Since(lastExecutionTime).String())
 			}
 		}
-		duration := time.Since(start)
-		if duration < FETCH_LOG_INTERVAL {
-			time.Sleep(FETCH_LOG_INTERVAL - duration)
-		}
 		fromBlock = currentBlockNumber + 1
+	}
+}
+func (c *EvmClient) calculateSleepTime(lastExecutionTime time.Time, fromBlock, currentBlockNumber uint64, fetchRange uint64) time.Duration {
+	// There are too many new blocks, fetch logs immediately
+	if fromBlock+fetchRange <= currentBlockNumber {
+		return time.Duration(0)
+	}
+	fetchInterval := time.Duration(c.EvmConfig.FetchIntervalInMinutes) * time.Minute
+	if fetchInterval == 0 {
+		//Minimum fetch interval is 1 minute
+		fetchInterval = time.Minute
+	}
+	elapsedTime := time.Since(lastExecutionTime)
+	if elapsedTime < fetchInterval {
+		//Sleep until the next fetch
+		return fetchInterval - elapsedTime
+	}
+	return time.Duration(0)
+}
+
+// Get missing logs from config startBlock to current block at starting time
+func (c *EvmClient) recoverLogs(ctx context.Context, query *ethereum.FilterQuery,
+	currentBlockNumber uint64, logsChan chan<- []types.Log) {
+	fromBlock := uint64(0)
+	lastFetchedBlock := uint64(0)
+	var err error
+	if c.dbAdapter != nil {
+		lastFetchedBlock, err = c.dbAdapter.GetLatestFetchedBlock(c.EvmConfig.GetId())
+		if err != nil {
+			log.Warn().Err(err).Msg("[EvmClient] [LoopFetchLogs] cannot get latest block number.")
+		}
+	}
+	if lastFetchedBlock > 0 {
+		fromBlock = lastFetchedBlock + 1
+	}
+	if fromBlock < c.EvmConfig.StartBlock {
+		fromBlock = c.EvmConfig.StartBlock
+	} else {
+		fromBlock = lastFetchedBlock + 1
+	}
+	recoverRange := uint64(1000000)
+	if c.EvmConfig.RecoverRange > 0 && c.EvmConfig.RecoverRange < 1000000 {
+		recoverRange = c.EvmConfig.RecoverRange
+	}
+	log.Info().
+		Str("Chain", c.EvmConfig.ID).
+		Uint64("FromBlock", fromBlock).
+		Uint64("RecoverRange", recoverRange).
+		Uint64("CurrentBlockNumber", currentBlockNumber).
+		Msg("[EvmClient] [recoverLogs] start recovering logs")
+	var logCounter int
+	// pass recoverRange as reference for adjustment
+	if fromBlock <= currentBlockNumber {
+		start := time.Now()
+		logCounter, err = c.FetchRangeLogs(ctx, query, logsChan, fromBlock, currentBlockNumber, &recoverRange, true)
+		if err != nil {
+			log.Warn().Err(err).Msgf("[EvmClient] [recoverLogs] cannot recover events for evm client %s", c.EvmConfig.GetId())
+		} else {
+			log.Info().
+				Str("Chain", c.EvmConfig.ID).
+				Uint64("FromBlock", fromBlock).
+				Uint64("RecoverRange", recoverRange).
+				Uint64("CurrentBlockNumber", currentBlockNumber).
+				Int("TotalLogs", logCounter).
+				Msgf("[EvmClient] [recoverLogs] finished in %s", time.Since(start).String())
+		}
+	} else {
+		log.Info().
+			Str("Chain", c.EvmConfig.ID).
+			Uint64("LastFetchedBlock", lastFetchedBlock).
+			Uint64("StartBlock", c.EvmConfig.StartBlock).
+			Uint64("CurrentBlockNumber", currentBlockNumber).
+			Msgf("[EvmClient] [recoverLogs] current block number is fetched. Finished recovering logs")
 	}
 }
 
