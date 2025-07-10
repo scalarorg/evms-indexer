@@ -114,7 +114,7 @@ func NewBtcClients(globalConfig *config.Config) ([]*BtcClient, error) {
 		}
 		indexer, err := NewBtcClient(&cfg)
 		if err != nil {
-			log.Error().Err(err).Msgf("failed to create btc client %s: %w", cfg.BtcHost, err)
+			log.Error().Err(err).Msgf("failed to create btc client %s: %s", cfg.BtcHost, err.Error())
 		} else if indexer != nil {
 			log.Info().Msgf("BTC indexer %s is enabled", cfg.BtcHost)
 			indexers = append(indexers, indexer)

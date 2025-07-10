@@ -19,15 +19,11 @@ import (
 )
 
 // RecoverAllEvents recovers all events from the latest block in the database
+// TODO: better handle store log event check point
 func (c *EvmClient) FetchRangeLogs(ctx context.Context, query *ethereum.FilterQuery, logsChan chan<- []ethTypes.Log,
-	fromBlock uint64, currentBlockNumber uint64, recoverRange *uint64) (int, error) {
+	fromBlock uint64, currentBlockNumber uint64, recoverRange *uint64, storeLogEventCheckPoint bool) (int, error) {
 
 	logCounter := 0
-	// log.Info().Str("Chain", c.EvmConfig.ID).
-	// 	Uint64("FromBlock", fromBlock).
-	// 	Uint64("RecoverRange", *recoverRange).
-	// 	Uint64("CurrentBlockNumber", currentBlockNumber).
-	// 	Msg("[EvmClient] start fetch logs")
 	for fromBlock <= currentBlockNumber {
 		setQueryRange(query, fromBlock, recoverRange, currentBlockNumber)
 		start := time.Now()
@@ -49,6 +45,9 @@ func (c *EvmClient) FetchRangeLogs(ctx context.Context, query *ethereum.FilterQu
 				len(logs), fromBlock, query.ToBlock, currentBlockNumber, time.Since(start))
 			logsChan <- logs
 			logCounter += len(logs)
+		}
+
+		if storeLogEventCheckPoint {
 			logEventCheckPoint := &types.LogEventCheckPoint{
 				ChainID:   c.EvmConfig.GetId(),
 				LastBlock: query.ToBlock.Uint64(),
@@ -58,6 +57,7 @@ func (c *EvmClient) FetchRangeLogs(ctx context.Context, query *ethereum.FilterQu
 				log.Error().Err(err).Msgf("[EvmClient] [FetchRangeLogs] failed to update latest fetched block")
 			}
 		}
+
 		//Sleep until 100ms after start to avoid rate limit
 		if time.Since(start) > time.Millisecond*100 {
 			time.Sleep(time.Millisecond*100 - time.Since(start))
@@ -135,10 +135,8 @@ func (c *EvmClient) fetchBlocks(ctx context.Context, blockHeightsChan <-chan map
 						log.Error().Msgf("[EvmClient] [worker-%d] block %d not found", workerID, blockNumber)
 						continue
 					} else {
-						log.Info().Uint64("BlockNumber", block.NumberU64()).
-							Str("BlockHash", hex.EncodeToString(block.Hash().Bytes())).
-							Uint64("BlockTime", block.Time()).
-							Int("WorkerID", workerID).
+						log.Info().Str("Chain", c.EvmConfig.ID).Uint64("BlockNumber", block.NumberU64()).
+							Time("BlockTime", time.Unix(int64(block.Time()), 0)).
 							Msgf("[EvmClient] [worker-%d] found block", workerID)
 
 						blockHeader := &chains.BlockHeader{
@@ -172,6 +170,7 @@ func (c *EvmClient) fetchBlocks(ctx context.Context, blockHeightsChan <-chan map
 				wg.Wait()
 				return
 			}
+			log.Info().Str("Chain", c.EvmConfig.ID).Int("BlockHeights", len(blockHeights)).Msg("Received block heights")
 			for blockNumber := range blockHeights {
 				blockQueue.Push(blockNumber)
 			}

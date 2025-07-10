@@ -15,20 +15,22 @@ const (
 type Byte32 [32]uint8
 type Bytes []byte
 type EvmNetworkConfig struct {
-	ChainID      uint64        `mapstructure:"chain_id" json:"chainId"`
-	Enable       bool          `mapstructure:"enable" json:"enable"`
-	ID           string        `mapstructure:"id" json:"id"`
-	Name         string        `mapstructure:"name" json:"name"`
-	RPCUrl       string        `mapstructure:"rpc_url" json:"rpcUrl"`
-	Gateway      string        `mapstructure:"gateway" json:"gateway"`
-	Finality     int           `mapstructure:"finality" json:"finality"`
-	StartBlock   uint64        `mapstructure:"start_block" json:"startBlock"`
-	BlockTime    time.Duration `mapstructure:"blockTime" json:"blockTime"` //Timeout im ms for pending txs
-	MaxRetry     int           `mapstructure:"max_retry" json:"maxRetry"`
-	RecoverRange uint64        `mapstructure:"recover_range" json:"recoverRange"` //Max block range to recover events in single query
-	FetchThread  int           `mapstructure:"fetch_thread" json:"fetchThread"`   //Number of threads to fetch blocks
-	RetryDelay   time.Duration `mapstructure:"retry_delay" json:"retryDelay"`
-	DatabaseURL  string        `mapstructure:"database_url" json:"database_url"` //Separate database URL for this EVM chain
+	ChainID                uint64        `mapstructure:"chain_id" json:"chainId"`
+	Enable                 bool          `mapstructure:"enable" json:"enable"`
+	ID                     string        `mapstructure:"id" json:"id"`
+	Name                   string        `mapstructure:"name" json:"name"`
+	RPCUrl                 string        `mapstructure:"rpc_url" json:"rpcUrl"`
+	Gateway                string        `mapstructure:"gateway" json:"gateway"`
+	Finality               int           `mapstructure:"finality" json:"finality"`
+	FetchIntervalInMinutes int           `mapstructure:"fetch_interval_in_minutes" json:"fetchIntervalInMinutes"`
+	StartBlock             uint64        `mapstructure:"start_block" json:"startBlock"`
+	BlockTime              time.Duration `mapstructure:"blockTime" json:"blockTime"` //Timeout im ms for pending txs
+	MaxRetry               int           `mapstructure:"max_retry" json:"maxRetry"`
+	FetchRange             uint64        `mapstructure:"fetch_range" json:"fetchRange"`     //Max block range to fetch events in single query
+	RecoverRange           uint64        `mapstructure:"recover_range" json:"recoverRange"` //Max block range to recover events in single query
+	FetchThread            int           `mapstructure:"fetch_thread" json:"fetchThread"`   //Number of threads to fetch blocks
+	RetryDelay             time.Duration `mapstructure:"retry_delay" json:"retryDelay"`
+	DatabaseURL            string        `mapstructure:"database_url" json:"database_url"` //Separate database URL for this EVM chain
 }
 
 func (c *EvmNetworkConfig) GetChainId() uint64 {
