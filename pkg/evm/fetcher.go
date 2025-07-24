@@ -57,9 +57,11 @@ func (c *EvmClient) FetchRangeLogs(ctx context.Context, query *ethereum.FilterQu
 				ChainID:   c.EvmConfig.GetId(),
 				LastBlock: query.ToBlock.Uint64(),
 			}
-			err = c.dbAdapter.UpdateLatestFetchedBlock(c.EvmConfig.GetId(), logEventCheckPoint)
-			if err != nil {
-				log.Error().Err(err).Msgf("[EvmClient] [FetchRangeLogs] failed to update latest fetched block")
+			if c.dbAdapter != nil {
+				err = c.dbAdapter.UpdateLatestFetchedBlock(c.EvmConfig.GetId(), logEventCheckPoint)
+				if err != nil {
+					log.Error().Err(err).Msgf("[EvmClient] [FetchRangeLogs] failed to update latest fetched block")
+				}
 			}
 		}
 

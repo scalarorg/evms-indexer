@@ -1,6 +1,7 @@
 package db
 
 import (
+	"github.com/rs/zerolog/log"
 	"github.com/scalarorg/data-models/chains"
 	"gorm.io/gorm/clause"
 )
@@ -64,6 +65,7 @@ func (db *DatabaseAdapter) SaveContractCallWithTokens(values []*chains.ContractC
 		},
 	).Create(values)
 	if result.Error != nil {
+		log.Info().Any("values", values).Msg("SaveContractCallWithTokens")
 		return result.Error
 	}
 	return nil

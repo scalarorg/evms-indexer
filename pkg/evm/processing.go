@@ -223,7 +223,7 @@ func (ec *EvmClient) SaveBatchRecords(ctx context.Context, event *abi.Event, rec
 
 	switch event.Name {
 	case evmAbi.EVENT_EVM_TOKEN_SENT:
-		tokenSents := make([]*chains.TokenSent, 0, len(records))
+		tokenSents := []*chains.TokenSent{}
 		for _, record := range records {
 			if tokenSent, ok := record.(*chains.TokenSent); ok {
 				tokenSents = append(tokenSents, tokenSent)
@@ -233,7 +233,7 @@ func (ec *EvmClient) SaveBatchRecords(ctx context.Context, event *abi.Event, rec
 		}
 		return ec.dbAdapter.SaveTokenSents(tokenSents)
 	case evmAbi.EVENT_EVM_CONTRACT_CALL:
-		contractCalls := make([]*chains.ContractCall, 0, len(records))
+		contractCalls := []*chains.ContractCall{}
 		for _, record := range records {
 			if contractCall, ok := record.(*chains.ContractCall); ok {
 				contractCalls = append(contractCalls, contractCall)
@@ -243,7 +243,7 @@ func (ec *EvmClient) SaveBatchRecords(ctx context.Context, event *abi.Event, rec
 		}
 		return ec.dbAdapter.SaveContractCalls(contractCalls)
 	case evmAbi.EVENT_EVM_CONTRACT_CALL_WITH_TOKEN:
-		contractCallWithTokens := make([]*chains.ContractCallWithToken, 0, len(records))
+		contractCallWithTokens := []*chains.ContractCallWithToken{}
 		for _, record := range records {
 			if contractCallWithToken, ok := record.(*chains.ContractCallWithToken); ok {
 				contractCallWithTokens = append(contractCallWithTokens, contractCallWithToken)
@@ -253,7 +253,7 @@ func (ec *EvmClient) SaveBatchRecords(ctx context.Context, event *abi.Event, rec
 		}
 		return ec.dbAdapter.SaveContractCallWithTokens(contractCallWithTokens)
 	case evmAbi.EVENT_EVM_CONTRACT_CALL_APPROVED:
-		contractCallApproveds := make([]*chains.ContractCallApproved, 0, len(records))
+		contractCallApproveds := []*chains.ContractCallApproved{}
 		for _, record := range records {
 			if contractCallApproved, ok := record.(*chains.ContractCallApproved); ok {
 				contractCallApproveds = append(contractCallApproveds, contractCallApproved)
@@ -263,7 +263,7 @@ func (ec *EvmClient) SaveBatchRecords(ctx context.Context, event *abi.Event, rec
 		}
 		return ec.dbAdapter.SaveContractCallApproveds(contractCallApproveds)
 	case evmAbi.EVENT_EVM_REDEEM_TOKEN:
-		redeemTxs := make([]*chains.EvmRedeemTx, 0, len(records))
+		redeemTxs := []*chains.EvmRedeemTx{}
 		for _, record := range records {
 			if redeemTx, ok := record.(*chains.EvmRedeemTx); ok {
 				redeemTxs = append(redeemTxs, redeemTx)
@@ -273,7 +273,7 @@ func (ec *EvmClient) SaveBatchRecords(ctx context.Context, event *abi.Event, rec
 		}
 		return ec.dbAdapter.SaveEvmRedeemTxs(redeemTxs)
 	case evmAbi.EVENT_EVM_COMMAND_EXECUTED:
-		executedTxs := make([]*chains.CommandExecuted, 0, len(records))
+		executedTxs := []*chains.CommandExecuted{}
 		for _, record := range records {
 			if executedTx, ok := record.(*chains.CommandExecuted); ok {
 				executedTxs = append(executedTxs, executedTx)
@@ -283,7 +283,7 @@ func (ec *EvmClient) SaveBatchRecords(ctx context.Context, event *abi.Event, rec
 		}
 		return ec.dbAdapter.SaveCommandExecuteds(executedTxs)
 	case evmAbi.EVENT_EVM_TOKEN_DEPLOYED:
-		tokenDeployed := make([]*chains.TokenDeployed, 0, len(records))
+		tokenDeployed := []*chains.TokenDeployed{}
 		for _, record := range records {
 			if tokenDeployedRecord, ok := record.(*chains.TokenDeployed); ok {
 				tokenDeployed = append(tokenDeployed, tokenDeployedRecord)
@@ -293,7 +293,7 @@ func (ec *EvmClient) SaveBatchRecords(ctx context.Context, event *abi.Event, rec
 		}
 		return ec.dbAdapter.SaveTokenDeployeds(tokenDeployed)
 	case evmAbi.EVENT_EVM_SWITCHED_PHASE:
-		switchedPhase := make([]*chains.SwitchedPhase, 0, len(records))
+		switchedPhase := []*chains.SwitchedPhase{}
 		for _, record := range records {
 			if switchedPhaseRecord, ok := record.(*chains.SwitchedPhase); ok {
 				switchedPhase = append(switchedPhase, switchedPhaseRecord)

@@ -80,11 +80,12 @@ func (p *CustodianOnly) Parse(payload []byte) error {
 }
 
 func (p *UPC) Parse(payload []byte) error {
-	decoded, err := abi.ContractCallWithTokenUPC.Unpack(payload)
-	if err != nil {
-		return err
-	}
-	p.Psbt = decoded[0].([]byte)
+	// decoded, err := abi.ContractCallWithTokenUPC.Unpack(payload)
+	// if err != nil {
+	// 	return err
+	// }
+	// p.Psbt = decoded[0].([]byte)
+	p.Psbt = payload
 	return nil
 }
 

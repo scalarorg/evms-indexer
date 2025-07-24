@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/rs/zerolog/log"
 	"github.com/scalarorg/data-models/chains"
 	contracts "github.com/scalarorg/evms-indexer/pkg/evm/contracts/generated"
 	"github.com/scalarorg/evms-indexer/pkg/types"
@@ -59,20 +60,24 @@ func ContractCallWithTokenEvent2Model(sourceChain string, event *contracts.IScal
 	chainInfoBytes := types.ChainInfoBytes{}
 	err := chainInfoBytes.FromString(event.DestinationChain)
 	if err != nil {
+		log.Error().Err(err).Msg("failed to get chain info")
 		return nil
 	}
 	chainType := chainInfoBytes.ChainType()
 	if chainType != types.ChainTypeBitcoin {
+		log.Error().Any("chainType", chainType).Msg("chainType is not bitcoin")
 		return nil
 	}
 	//Extract user destination address
 	payload := ContractCallWithTokenPayload{}
 	err = payload.Parse(event.Payload)
 	if err != nil {
+		log.Error().Err(err).Msg("failed to parse payload")
 		return nil
 	}
 	destinationAddress, err := payload.GetDestinationAddress(chainInfoBytes.ChainID())
 	if err != nil {
+		log.Error().Err(err).Msg("failed to get destination address")
 		return nil
 	}
 

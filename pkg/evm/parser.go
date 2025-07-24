@@ -5,6 +5,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/rs/zerolog/log"
 	evmAbi "github.com/scalarorg/evms-indexer/pkg/evm/abi"
 	contracts "github.com/scalarorg/evms-indexer/pkg/evm/contracts/generated"
 	"github.com/scalarorg/evms-indexer/pkg/evm/parser"
@@ -43,6 +44,7 @@ func parseEventLog(sourceChain string, event *abi.Event, txLog types.Log) (any, 
 			return nil, nil, fmt.Errorf("failed to parse event %s: %w", event.Name, err)
 		}
 		model := parser.ContractCallWithTokenEvent2Model(sourceChain, contractCallWithToken)
+		log.Info().Any("model", model).Any("contractCallWithToken", contractCallWithToken).Msg("ContractCallWithTokenEvent2Model")
 		return contractCallWithToken, model, nil
 	case evmAbi.EVENT_EVM_CONTRACT_CALL:
 		contractCall := &contracts.IScalarGatewayContractCall{
